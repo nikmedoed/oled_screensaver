@@ -1,10 +1,12 @@
+import logging
 import threading
 import time
 import tkinter as tk
-import logging
 
 import keyboard
 import pyautogui
+
+CURSOR_CHECK_TIMEOUT = 5000
 
 
 class ScreenLocker:
@@ -16,7 +18,7 @@ class ScreenLocker:
         self.root = root
         self.timeout_seconds = timeout_seconds
         self.last_activity_time = time.time()  # время последней активности (общая для всех режимов)
-        self.lock_screen_open_time = None      # время открытия текущего окна блокировки
+        self.lock_screen_open_time = None  # время открытия текущего окна блокировки
         self.last_mouse_position = pyautogui.position()
         self.locked = False
         self.locker_window = None
@@ -38,9 +40,8 @@ class ScreenLocker:
         logging.debug("Registered global keyboard hook for activity monitoring.")
 
     def global_keyboard_event(self, event):
-        if not self.locked:
-            self.last_activity_time = time.time()
-            logging.debug(f"Global keyboard event: {event.name}")
+        self.last_activity_time = time.time()
+        logging.debug(f"Global keyboard event: {event.name}")
 
     def toggle_lock(self):
         logging.debug("Hotkey Ctrl+B triggered")
@@ -53,16 +54,15 @@ class ScreenLocker:
         """Проверка перемещения мыши в незаблокированном режиме."""
         while True:
             current_position = pyautogui.position()
-            if not self.locked:
-                if current_position != self.last_mouse_position:
-                    logging.debug(f"Mouse moved from {self.last_mouse_position} to {current_position}")
-                    self.last_activity_time = time.time()
-                    self.last_mouse_position = current_position
-                else:
-                    elapsed = time.time() - self.last_activity_time
-                    if elapsed > self.timeout_seconds:
-                        logging.debug(f"No input detected for {elapsed:.1f} seconds. Locking screen.")
-                        self.root.after(0, self.lock_screen)
+            if current_position != self.last_mouse_position:
+                logging.debug(f"Mouse moved from {self.last_mouse_position} to {current_position}")
+                self.last_activity_time = time.time()
+                self.last_mouse_position = current_position
+            else:
+                elapsed = time.time() - self.last_activity_time
+                if elapsed > self.timeout_seconds:
+                    logging.debug(f"No input detected for {elapsed:.1f} seconds. Locking screen.")
+                    self.root.after(0, self.lock_screen)
             time.sleep(2)
 
     def lock_screen(self):
@@ -76,24 +76,40 @@ class ScreenLocker:
                 self.refresh_lock_screen()
                 return
 
+        self.locker_window = self.create_black_screen()
+
+    def create_black_screen(self):
         logging.debug("Locking screen now...")
         self.locked = True
-        self.locker_window = tk.Toplevel(self.root)
-        self.locker_window.attributes("-fullscreen", True)
-        self.locker_window.config(bg="black")
-        self.locker_window.bind("<Button>", lambda event: self.unlock())
-        self.locker_window.bind("<Key>", self.handle_key)
-        self.locker_window.bind("<Motion>", self.locked_mouse_motion)
-        self.locker_window.protocol("WM_DELETE_WINDOW", lambda: None)
-        self.locker_window.focus_set()
-
-        # Фиксируем время показа экрана блокировки
-        self.lock_screen_open_time = time.time()
-        self.last_activity_time = time.time()
+        new_window = tk.Toplevel(self.root)
+        new_window.attributes("-fullscreen", True)
+        new_window.config(bg="black")
+        new_window.bind("<Button>", lambda event: self.unlock())
+        new_window.bind("<Key>", self.handle_key)
+        new_window.bind("<Motion>", self.locked_mouse_motion)
+        new_window.protocol("WM_DELETE_WINDOW", lambda: None)
+        new_window.focus_set()
         logging.debug("Black screen activated.")
 
-        self.locker_window.after(2000, self.check_cursor_visibility)
-        self.locker_window.after(5000, self.check_locked_window_refresh)
+        new_window.after(CURSOR_CHECK_TIMEOUT, self.check_cursor_visibility)
+
+        self.lock_screen_open_time = time.time()
+        return new_window
+
+    def refresh_lock_screen(self):
+        """Создаёт новое окно поверх текущего и уничтожает старое."""
+        new_window = self.create_black_screen()
+        self.root.after(100, lambda: self.locker_window_destroy(new_window))
+
+    def locker_window_destroy(self, new_window=None):
+        """Уничтожает текущее окно блокировки и заменяет его новым."""
+        if self.locker_window is not None and self.locker_window.winfo_exists():
+            try:
+                logging.debug("Destroying old lock window.")
+                self.locker_window.destroy()
+            except Exception as e:
+                logging.debug(f"Error destroying old lock window: {e}")
+        self.locker_window = new_window
 
     def handle_key(self, event):
         """Обработчик нажатий в заблокированном режиме – обновляет время активности."""
@@ -114,66 +130,18 @@ class ScreenLocker:
         """Показывает или скрывает курсор в зависимости от активности."""
         if self.locker_window is None:
             return
-        elapsed = time.time() - self.last_activity_time
-        if elapsed >= self.timeout_seconds:
-            if self.locker_window['cursor'] != 'none':
+        if self.locker_window['cursor'] != 'none':
+            elapsed = time.time() - self.last_activity_time
+            if elapsed * 1000 >= CURSOR_CHECK_TIMEOUT:
                 self.locker_window.config(cursor='none')
                 logging.debug("Cursor hidden due to inactivity in locked mode.")
-        else:
-            if self.locker_window['cursor'] == 'none':
-                self.locker_window.config(cursor='')
-                logging.debug("Cursor shown due to recent activity in locked mode.")
-        self.locker_window.after(2000, self.check_cursor_visibility)
-
-    def check_locked_window_refresh(self):
-        """Проверяет, нужно ли обновить окно блокировки."""
-        if self.locker_window is None:
-            return
-        if self.last_activity_time > self.lock_screen_open_time:
-            elapsed = time.time() - self.last_activity_time
-            if elapsed >= self.timeout_seconds:
-                logging.debug(
-                    "Refreshing locked screen due to detected activity after display and subsequent inactivity.")
-                self.refresh_lock_screen()
-        self.locker_window.after(5000, self.check_locked_window_refresh)
-
-    def refresh_lock_screen(self):
-        """Создаёт новое окно поверх текущего и уничтожает старое."""
-        logging.debug("Refreshing lock screen: creating new lock window.")
-        new_window = tk.Toplevel(self.root)
-        new_window.attributes("-fullscreen", True)
-        new_window.config(bg="black")
-        new_window.bind("<Button>", lambda event: self.unlock())
-        new_window.bind("<Key>", self.handle_key)
-        new_window.bind("<Motion>", self.locked_mouse_motion)
-        new_window.protocol("WM_DELETE_WINDOW", lambda: None)
-        new_window.focus_set()
-
-        # Обновляем время показа нового окна блокировки
-        self.lock_screen_open_time = time.time()
-        self.last_activity_time = time.time()
-        new_window.after(2000, self.check_cursor_visibility)
-        new_window.after(5000, self.check_locked_window_refresh)
-
-        # Задержка для плавного перехода, затем уничтожаем старое окно
-        self.root.after(100, lambda: self.destroy_old_window(new_window))
-
-    def destroy_old_window(self, new_window):
-        """Уничтожает текущее окно блокировки и заменяет его новым."""
-        if self.locker_window is not None and self.locker_window.winfo_exists():
-            try:
-                logging.debug("Destroying old lock window.")
-                self.locker_window.destroy()
-            except Exception as e:
-                logging.debug(f"Error destroying old lock window: {e}")
-        self.locker_window = new_window
+        self.locker_window.after(CURSOR_CHECK_TIMEOUT, self.check_cursor_visibility)
 
     def unlock(self):
         """Разблокирует экран, уничтожая окно блокировки."""
         if self.locked and self.locker_window is not None:
             logging.debug("Unlocking screen...")
-            self.locker_window.destroy()
-            self.locker_window = None
+            self.locker_window_destroy()
             self.locked = False
             self.last_activity_time = time.time()
             logging.debug("Screen unlocked.")
