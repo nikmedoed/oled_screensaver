@@ -88,7 +88,10 @@ class ScreenLocker:
         logging.debug("Locking screen now...")
         self.locked = True
         new_window = tk.Toplevel(self.root)
-        new_window.attributes("-fullscreen", True)
+        new_window.overrideredirect(True) 
+        screen_width = new_window.winfo_screenwidth()
+        screen_height = new_window.winfo_screenheight()
+        new_window.geometry(f"{screen_width}x{screen_height}+0+0")
         new_window.config(bg="black")
         new_window.bind("<Button>", lambda event: self.unlock())
         new_window.bind("<Key>", self.handle_key)
