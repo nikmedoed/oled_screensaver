@@ -9,7 +9,7 @@ from pystray import MenuItem as item, Menu
 
 from ScreenSaver import ScreenLocker
 
-# Режим разработки: если передан параметр 'dev', включаем отладку и уменьшаем таймаут до 5 секунд.
+# Режим разработки: если передан параметр 'dev', уменьшаем таймаут до 5 секунд.
 DEV_MODE = 'dev' in sys.argv
 TIMEOUT = 5 if DEV_MODE else 120
 
@@ -32,43 +32,47 @@ def create_tray_image():
 
 
 def quit_app(icon, item):
-    """Функция закрытия приложения, вызываемая из меню трея."""
-    logging.debug("Exiting application via tray icon.")
+    """Закрытие приложения по выбору из меню трея."""
+    logging.debug("Выход из приложения через трей-иконку.")
     icon.stop()
     root.after(0, root.destroy)
 
 
 def toggle_auto_lock(icon, item):
-    """Переключает автоматическую блокировку через меню трея."""
+    """Переключает автоблокировку через меню трея."""
     locker.toggle_auto_lock()
 
 
+def auto_lock_label(_item):
+    return "Отключить автоблокировку" if locker.auto_lock_enabled else "Включить автоблокировку"
+
+
 def setup_tray():
-    """Настраивает и запускает иконку в системном трее с меню."""
+    """Настраивает и запускает иконку трея с динамичным меню."""
     image = create_tray_image()
     menu = Menu(
-        item('Переключить авто-блокировку', toggle_auto_lock),
+        item(auto_lock_label, toggle_auto_lock),
         item('Выход', quit_app)
     )
     tray_icon = pystray.Icon("ScreenLocker", image, "ScreenLocker", menu)
     tray_icon.run()
 
 
-# --- Основной блок запуска приложения ---
+# --- Запуск приложения ---
 
 if __name__ == "__main__":
     if DEV_MODE:
         logging.info("Запущен в режиме разработчика (dev mode)")
-    # Создаём корневой объект tkinter (скрытый, т.к. используем Toplevel для блокировки)
+    # Создаём скрытый корневой объект tkinter
     root = tk.Tk()
     root.withdraw()
     # Инициализируем блокировщик экрана
     locker = ScreenLocker(root, timeout_seconds=TIMEOUT)
-    logging.debug("ScreenLocker initialized. Entering mainloop.")
+    logging.debug("Экземпляр ScreenLocker создан. Запуск главного цикла.")
 
     # Запускаем трей-иконку в отдельном потоке
     tray_thread = threading.Thread(target=setup_tray, daemon=True)
     tray_thread.start()
 
-    # Запускаем главный цикл tkinter
+    # Запуск основного цикла tkinter
     root.mainloop()
