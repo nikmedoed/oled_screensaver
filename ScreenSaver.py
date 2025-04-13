@@ -22,9 +22,11 @@ class ScreenLocker:
         self.last_mouse_position = pyautogui.position()
         self.locked = False
         self.locker_window = None
+        self.auto_lock_enabled = True  # Флаг автоматической блокировки включен по умолчанию
 
         logging.debug(f"Initial mouse position: {self.last_mouse_position}")
         logging.debug(f"Timeout set to {self.timeout_seconds} seconds")
+        logging.debug("Automatic locking enabled by default.")
 
         # Запуск фонового потока проверки мыши
         self.monitor_thread = threading.Thread(target=self.monitor_mouse, daemon=True)
@@ -61,8 +63,11 @@ class ScreenLocker:
             else:
                 elapsed = time.time() - self.last_activity_time
                 if elapsed > self.timeout_seconds:
-                    logging.debug(f"No input detected for {elapsed:.1f} seconds. Locking screen.")
-                    self.root.after(0, self.lock_screen)
+                    if self.auto_lock_enabled:
+                        logging.debug(f"No input detected for {elapsed:.1f} seconds. Locking screen.")
+                        self.root.after(0, self.lock_screen)
+                    else:
+                        logging.debug("Auto lock disabled, not locking despite inactivity.")
             time.sleep(2)
 
     def lock_screen(self):
@@ -88,7 +93,7 @@ class ScreenLocker:
         logging.debug("Locking screen now...")
         self.locked = True
         new_window = tk.Toplevel(self.root)
-        new_window.overrideredirect(True) 
+        new_window.overrideredirect(True)
         screen_width = new_window.winfo_screenwidth()
         screen_height = new_window.winfo_screenheight()
         new_window.geometry(f"{screen_width}x{screen_height}+0+0")
@@ -175,3 +180,8 @@ class ScreenLocker:
             self.locked = False
             self.last_activity_time = time.time()
             logging.debug("Screen unlocked.")
+
+    def toggle_auto_lock(self):
+        """Переключает автоматическую блокировку экрана."""
+        self.auto_lock_enabled = not self.auto_lock_enabled
+        logging.info(f"Automatic locking {'enabled' if self.auto_lock_enabled else 'disabled'}")

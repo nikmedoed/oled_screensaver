@@ -38,10 +38,18 @@ def quit_app(icon, item):
     root.after(0, root.destroy)
 
 
+def toggle_auto_lock(icon, item):
+    """Переключает автоматическую блокировку через меню трея."""
+    locker.toggle_auto_lock()
+
+
 def setup_tray():
     """Настраивает и запускает иконку в системном трее с меню."""
     image = create_tray_image()
-    menu = Menu(item('Выход', quit_app))
+    menu = Menu(
+        item('Переключить авто-блокировку', toggle_auto_lock),
+        item('Выход', quit_app)
+    )
     tray_icon = pystray.Icon("ScreenLocker", image, "ScreenLocker", menu)
     tray_icon.run()
 
