@@ -34,12 +34,31 @@ class ScreenLocker:
         threading.Thread(target=self.monitor_mouse, daemon=True).start()
 
         # Register hotkeys for toggling lock
-        keyboard.add_hotkey('ctrl+b', lambda: self.root.after(0, self.toggle_lock))
-        keyboard.add_hotkey('b+ctrl', lambda: self.root.after(0, self.toggle_lock))
+        self.bind_hotkeys()
+        # Start monitoring thread to periodically rebind hotkeys (на случай, если хуки отваливаются)
+        threading.Thread(target=self.monitor_hotkeys, daemon=True).start()
+
         keyboard.on_press(self.global_keyboard_event)
 
+    def bind_hotkeys(self):
+        keyboard.add_hotkey('ctrl+b', lambda: self.root.after(0, self.toggle_lock))
+        keyboard.add_hotkey('b+ctrl', lambda: self.root.after(0, self.toggle_lock))
+        logging.debug("Горячие клавиши привязаны")
+
+    def rebind_hotkeys(self):
+        # Сбрасываем все горячие клавиши и привязываем снова
+        keyboard.unhook_all_hotkeys()
+        self.bind_hotkeys()
+        logging.debug("Горячие клавиши переинициализированы")
+
+    def monitor_hotkeys(self):
+        # Периодически (каждые 10 секунд) переинициализируем горячие клавиши
+        while True:
+            time.sleep(10)
+            self.rebind_hotkeys()
+
     def global_keyboard_event(self, event):
-        # Ignore events that occur too frequently
+        # Игнорируем слишком частые события
         if time.time() - self._last_key_time < MIN_KEY_INTERVAL:
             return
         self._last_key_time = time.time()
