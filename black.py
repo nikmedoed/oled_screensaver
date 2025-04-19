@@ -1,4 +1,5 @@
 import logging
+import platform
 import sys
 import threading
 import tkinter as tk
@@ -9,11 +10,9 @@ from pystray import MenuItem as item, Menu
 
 from ScreenSaver import ScreenLocker
 
-# Developer mode: reduce timeout to 5 seconds if 'dev' is in args
 DEV_MODE = 'dev' in sys.argv
 TIMEOUT = 5 if DEV_MODE else 120
 
-# Logging setup
 logging.basicConfig(
     level=logging.DEBUG if DEV_MODE else logging.INFO,
     format='[%(levelname)s] %(asctime)s: %(message)s',
@@ -22,7 +21,7 @@ logging.basicConfig(
 
 
 def create_tray_image():
-    """Creates a simple tray icon (e.g., a white-filled circle)."""
+    """Creates tray icon image (white circle on black background)."""
     width = 64
     height = 64
     image = Image.new('RGB', (width, height), "black")
@@ -32,15 +31,17 @@ def create_tray_image():
 
 
 def quit_app(icon, item):
-    """Exits application via tray icon menu."""
-    logging.debug("Exiting application via tray icon.")
+    logging.debug("Exiting via tray menu")
     icon.stop()
     root.after(0, root.destroy)
 
 
 def toggle_auto_lock(icon, item):
-    """Toggles auto-lock from tray menu."""
     locker.toggle_auto_lock()
+
+
+def toggle_lock_menu(icon, item):
+    root.after(0, locker.toggle_lock)
 
 
 def auto_lock_label(_item):
@@ -48,24 +49,39 @@ def auto_lock_label(_item):
 
 
 def setup_tray():
-    """Sets up and runs the tray icon with dynamic menu."""
+    """
+    Sets up tray icon and menu.
+    On Windows, binds left click to toggle lock.
+    On other systems, uses 'on_clicked'.
+    """
     image = create_tray_image()
     menu = Menu(
+        item("Toggle Lock", toggle_lock_menu, default=True),
         item(auto_lock_label, toggle_auto_lock),
-        item('Exit', quit_app)
+        item("Exit", quit_app)
     )
     tray_icon = pystray.Icon("ScreenLocker", image, "ScreenLocker", menu)
+
+    if platform.system() == "Windows":
+        def on_left_up(hwnd, msg, wparam, lparam):
+            root.after(0, locker.toggle_lock)
+
+        tray_icon._on_left_up = on_left_up
+    else:
+        tray_icon.on_clicked = lambda icon: root.after(0, locker.toggle_lock)
+
     tray_icon.run()
 
 
-# --- Application startup ---
 if __name__ == "__main__":
     if DEV_MODE:
         logging.info("Running in developer mode")
+
     root = tk.Tk()
     root.withdraw()
+
     locker = ScreenLocker(root, timeout_seconds=TIMEOUT)
-    logging.debug("ScreenLocker instance created. Starting main loop.")
+    logging.debug("ScreenLocker initialized.")
 
     tray_thread = threading.Thread(target=setup_tray, daemon=True)
     tray_thread.start()
