@@ -133,9 +133,6 @@ class ScreenLocker:
         """
         self.last_activity_time = time.time()
         logging.debug(f"Key pressed: {event.keysym} (state: {event.state})")
-        if (event.state & 0x4) and event.keysym.lower() == "b":
-            logging.debug("Ctrl+B detected - unlocking...")
-            self.unlock()
 
     def unlock(self):
         """Unlocks the screen and removes the black window."""
