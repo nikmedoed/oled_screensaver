@@ -19,6 +19,8 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
+durations_in_minutes = [15, 30, 60, 120, 180, 240, 480, 720]
+
 
 def create_tray_image():
     """Creates tray icon image (white circle on black background)."""
@@ -36,16 +38,33 @@ def quit_app(icon, item):
     root.after(0, root.destroy)
 
 
-def toggle_auto_lock(icon, item):
-    locker.toggle_auto_lock()
-
-
 def toggle_lock_menu(icon, item):
     root.after(0, locker.toggle_lock)
 
 
 def auto_lock_label(_item):
     return "Disable auto-lock" if locker.auto_lock_enabled else "Enable auto-lock"
+
+
+def toggle_auto_lock(icon, item):
+    locker.toggle_auto_lock()
+
+
+def auto_lock_delay(time):
+    logging.debug("Auto lock delay for item {}".format(item))
+
+
+def format_duration(minutes: int) -> str:
+    if minutes < 60:
+        return f"{minutes} minutes"
+    hours = minutes // 60
+    return f"{hours} hour{'s' if hours > 1 else ''}"
+
+
+items = [
+    item(format_duration(m), lambda icon, item: auto_lock_delay(m * 1000 * (1 if DEV_MODE else 60)))
+    for m in durations_in_minutes
+]
 
 
 def setup_tray():
@@ -58,6 +77,10 @@ def setup_tray():
     menu = Menu(
         item("Toggle Lock", toggle_lock_menu, default=True),
         item(auto_lock_label, toggle_auto_lock),
+        Menu.SEPARATOR,
+        item("Disable auto-lock on", None, enabled=False),
+        *items,
+        Menu.SEPARATOR,
         item("Exit", quit_app)
     )
     tray_icon = pystray.Icon("ScreenLocker", image, "ScreenLocker", menu)
