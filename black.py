@@ -12,6 +12,7 @@ from ScreenSaver import ScreenLocker
 
 DEV_MODE = 'dev' in sys.argv
 TIMEOUT = 5 if DEV_MODE else 120
+SECONDS_IN_MINUTE = 1 if DEV_MODE else 60
 
 logging.basicConfig(
     level=logging.DEBUG if DEV_MODE else logging.INFO,
@@ -46,12 +47,21 @@ def auto_lock_label(_item):
     return "Disable auto-lock" if locker.auto_lock_enabled else "Enable auto-lock"
 
 
+def delay_label(item):
+    state = locker.get_delay_label()
+    if isinstance(state, bool):
+        return "Auto-lock ENABLED" if state else "Auto-lock DISABLED"
+
+    if not isinstance(state, int):
+        return "N/A"
+    hh = state // 3600
+    mm = (state % 3600) // 60
+    ss = state % 60
+    return f"Auto-lock DISABLED for {hh:02d}:{mm:02d}:{ss:02d}"
+
+
 def toggle_auto_lock(icon, item):
     locker.toggle_auto_lock()
-
-
-def auto_lock_delay(time):
-    logging.debug("Auto lock delay for item {}".format(item))
 
 
 def format_duration(minutes: int) -> str:
@@ -61,29 +71,41 @@ def format_duration(minutes: int) -> str:
     return f"{hours} hour{'s' if hours > 1 else ''}"
 
 
-items = [
-    item(format_duration(m), lambda icon, item: auto_lock_delay(m * 1000 * (1 if DEV_MODE else 60)))
-    for m in durations_in_minutes
-]
+def auto_lock_delay(seconds: int):
+    locker.disable_auto_lock_for(seconds)
+    logging.debug(f"Auto lock delay for item {seconds}")
 
 
 def setup_tray():
-    """
-    Sets up tray icon and menu.
-    On Windows, binds left click to toggle lock.
-    On other systems, uses 'on_clicked'.
-    """
     image = create_tray_image()
+
+    def make_delay_action(minutes):
+        def action(icon, item):
+            locker.disable_auto_lock_for(minutes * SECONDS_IN_MINUTE)
+            logging.debug(f"Auto lock delay for {minutes} minutes")
+            icon.update_menu()
+
+        return action
+
+    delays = [
+        item(
+            format_duration(m),
+            make_delay_action(m)
+        )
+        for m in durations_in_minutes
+    ]
+
     menu = Menu(
-        item("Toggle Lock", toggle_lock_menu, default=True),
+        item(delay_label, None,
+             enabled=False, checked=lambda item: locker.auto_lock_enabled),
+        item("Toggle Lock manually", toggle_lock_menu, default=True),
         item(auto_lock_label, toggle_auto_lock),
         Menu.SEPARATOR,
-        item("Disable auto-lock on", None, enabled=False),
-        *items,
+        *delays,
         Menu.SEPARATOR,
         item("Exit", quit_app)
     )
-    tray_icon = pystray.Icon("ScreenLocker", image, "ScreenLocker", menu)
+    tray_icon = locker.tray_icon = pystray.Icon("ScreenLocker", image, "ScreenLocker", menu)
 
     if platform.system() == "Windows":
         def on_left_up(hwnd, msg, wparam, lparam):

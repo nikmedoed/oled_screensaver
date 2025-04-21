@@ -23,7 +23,12 @@ class ScreenLocker:
         self.last_mouse_position = pyautogui.position()
         self.locked = False
         self.locker_window = None
+        self.tray_icon = None
+
         self.auto_lock_enabled = True
+        self.delay_timer: threading.Timer | None = None
+        self.delayed_until: float | None = None
+
         self._last_key_time = 0
         self._last_toggle_time = 0
 
@@ -33,7 +38,6 @@ class ScreenLocker:
         threading.Thread(target=self.monitor_mouse, daemon=True).start()
         self.bind_hotkeys()
         threading.Thread(target=self.monitor_hotkeys, daemon=True).start()
-
         keyboard.on_press(self.global_keyboard_event)
 
     def bind_hotkeys(self):
@@ -71,6 +75,8 @@ class ScreenLocker:
     def monitor_mouse(self):
         """Monitors mouse movements to detect activity and trigger lock after timeout."""
         while True:
+            if self.tray_icon:
+                self.tray_icon.update_menu()
             if not self.auto_lock_enabled:
                 time.sleep(2)
                 continue
@@ -150,5 +156,32 @@ class ScreenLocker:
 
     def toggle_auto_lock(self):
         """Enables or disables auto-lock."""
+        if self.delay_timer and self.delay_timer.is_alive():
+            self.delay_timer.cancel()
+        self.delayed_until = None
+
         self.auto_lock_enabled = not self.auto_lock_enabled
-        logging.info("Auto-lock " + ("enabled" if self.auto_lock_enabled else "disabled"))
+        logging.debug("Auto-lock " + ("enabled" if self.auto_lock_enabled else "disabled"))
+
+    def disable_auto_lock_for(self, seconds: int):
+        """Отключает авто-блок на заданное количество секунд."""
+        if self.delay_timer and self.delay_timer.is_alive():
+            self.delay_timer.cancel()
+
+        self.auto_lock_enabled = False
+        self.delayed_until = time.time() + seconds
+
+        def _reenable():
+            logging.debug("Auto-lock re-enabled after delay")
+            self.auto_lock_enabled = True
+            self.delayed_until = None
+
+        self.delay_timer = threading.Timer(seconds, _reenable)
+        self.delay_timer.daemon = True
+        self.delay_timer.start()
+        logging.debug(f"Auto-lock disabled for {seconds} seconds")
+
+    def get_delay_label(self):
+        if self.delayed_until:
+            return int(self.delayed_until - time.time())
+        return self.auto_lock_enabled
