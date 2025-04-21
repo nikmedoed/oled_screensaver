@@ -3,6 +3,7 @@ import platform
 import sys
 import threading
 import tkinter as tk
+from datetime import datetime
 
 import pystray
 from PIL import Image, ImageDraw
@@ -47,17 +48,15 @@ def auto_lock_label(_item):
     return "Disable auto-lock" if locker.auto_lock_enabled else "Enable auto-lock"
 
 
-def delay_label(item):
-    state = locker.get_delay_label()
-    if isinstance(state, bool):
-        return "Auto-lock ENABLED" if state else "Auto-lock DISABLED"
+def auto_lock_state(item):
+    return "Auto-lock ENABLED" if locker.auto_lock_enabled else "Auto-lock DISABLED"
 
-    if not isinstance(state, int):
+
+def auto_lock_delay(item):
+    if not isinstance(locker.delayed_until, (int, float)):
         return "N/A"
-    hh = state // 3600
-    mm = (state % 3600) // 60
-    ss = state % 60
-    return f"Auto-lock DISABLED for {hh:02d}:{mm:02d}:{ss:02d}"
+    disable_until = datetime.fromtimestamp(locker.delayed_until)
+    return f">> until {disable_until.strftime('%H:%M:%S')}"
 
 
 def toggle_auto_lock(icon, item):
@@ -71,18 +70,13 @@ def format_duration(minutes: int) -> str:
     return f"{hours} hour{'s' if hours > 1 else ''}"
 
 
-def auto_lock_delay(seconds: int):
-    locker.disable_auto_lock_for(seconds)
-    logging.debug(f"Auto lock delay for item {seconds}")
-
-
 def setup_tray():
     image = create_tray_image()
 
-    def make_delay_action(minutes):
+    def make_delay_action(seconds):
         def action(icon, item):
-            locker.disable_auto_lock_for(minutes * SECONDS_IN_MINUTE)
-            logging.debug(f"Auto lock delay for {minutes} minutes")
+            locker.disable_auto_lock_for(seconds)
+            logging.debug(f"Auto lock delay for {seconds} seconds")
             icon.update_menu()
 
         return action
@@ -90,14 +84,16 @@ def setup_tray():
     delays = [
         item(
             format_duration(m),
-            make_delay_action(m)
+            make_delay_action(m * SECONDS_IN_MINUTE),
         )
         for m in durations_in_minutes
     ]
 
     menu = Menu(
-        item(delay_label, None,
+        item(auto_lock_state, None,
              enabled=False, checked=lambda item: locker.auto_lock_enabled),
+        item(auto_lock_delay, None,
+             enabled=False, visible=lambda item: locker.delayed_until),
         item("Toggle Lock manually", toggle_lock_menu, default=True),
         item(auto_lock_label, toggle_auto_lock),
         Menu.SEPARATOR,
@@ -105,7 +101,7 @@ def setup_tray():
         Menu.SEPARATOR,
         item("Exit", quit_app)
     )
-    tray_icon = locker.tray_icon = pystray.Icon("ScreenLocker", image, "ScreenLocker", menu)
+    tray_icon = pystray.Icon("ScreenLocker", image, "ScreenLocker", menu)
 
     if platform.system() == "Windows":
         def on_left_up(hwnd, msg, wparam, lparam):
