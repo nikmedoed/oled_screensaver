@@ -22,85 +22,73 @@ logging.basicConfig(
 )
 
 durations_in_minutes = [15, 30, 60, 120, 180, 240, 480, 720]
+last_delay_label = None
 
 
 def create_tray_image():
-    """Creates tray icon image (white circle on black background)."""
-    width = 64
-    height = 64
-    image = Image.new('RGB', (width, height), "black")
-    draw = ImageDraw.Draw(image)
+    width = height = 64
+    img = Image.new('RGB', (width, height), "black")
+    draw = ImageDraw.Draw(img)
     draw.ellipse((8, 8, width - 8, height - 8), fill="white")
-    return image
+    return img
 
 
 def quit_app(icon, item):
-    logging.debug("Exiting via tray menu")
     icon.stop()
     root.after(0, root.destroy)
 
 
-def toggle_lock_menu(icon, item):
-    root.after(0, locker.toggle_lock)
-
-
-def auto_lock_label(_item):
-    return "Disable auto-lock" if locker.auto_lock_enabled else "Enable auto-lock"
-
-
-def auto_lock_state(item):
-    return "Auto-lock ENABLED" if locker.auto_lock_enabled else "Auto-lock DISABLED"
-
-
-def auto_lock_delay(item):
-    if not isinstance(locker.delayed_until, (int, float)):
-        return "N/A"
-    disable_until = datetime.fromtimestamp(locker.delayed_until)
-    return f">> until {disable_until.strftime('%H:%M:%S')}"
-
-
-def toggle_auto_lock(icon, item):
-    locker.toggle_auto_lock()
-
-
 def format_duration(minutes: int) -> str:
     if minutes < 60:
-        return f"{minutes} minutes"
+        return f"{minutes} minute{'s' if minutes != 1 else ''}"
     hours = minutes // 60
-    return f"{hours} hour{'s' if hours > 1 else ''}"
+    return f"{hours} hour{'s' if hours != 1 else ''}"
+
+
+def make_delay_action(minutes):
+    def _action(icon, item):
+        global last_delay_label
+        last_delay_label = item.text
+        locker.disable_auto_lock_for(minutes * SECONDS_IN_MINUTE)
+        logging.debug(f"Auto-lock paused for {minutes} minutes")
+        icon.update_menu()
+
+    return _action
 
 
 def setup_tray():
     image = create_tray_image()
 
-    def make_delay_action(seconds):
-        def action(icon, item):
-            locker.disable_auto_lock_for(seconds)
-            logging.debug(f"Auto lock delay for {seconds} seconds")
-            icon.update_menu()
-
-        return action
-
-    delays = [
-        item(
-            format_duration(m),
-            make_delay_action(m * SECONDS_IN_MINUTE),
-        )
+    delay_items = [
+        item(format_duration(m), make_delay_action(m))
         for m in durations_in_minutes
     ]
 
     menu = Menu(
-        item(auto_lock_state, None,
-             enabled=False, checked=lambda item: locker.auto_lock_enabled),
-        item(auto_lock_delay, None,
-             enabled=False, visible=lambda item: locker.delayed_until),
-        item("Toggle Lock manually", toggle_lock_menu, default=True),
-        item(auto_lock_label, toggle_auto_lock),
+        item(
+            lambda _: f"Auto-lock {'ENABLED' if locker.auto_lock_enabled else 'DISABLED'}",
+            None,
+            enabled=False
+        ),
+        item(
+            lambda _: (
+                f">> until "
+                f"{datetime.fromtimestamp(locker.delayed_until).strftime('%H:%M:%S')} "
+                f"({last_delay_label})"
+            ),
+            None,
+            enabled=False,
+            visible=lambda _: locker.delayed_until is not None
+        ),
+        item("Toggle Lock manually", lambda _,: root.after(0, locker.toggle_lock), default=True),
+        item(lambda _: "Disable auto-lock" if locker.auto_lock_enabled else "Enable auto-lock",
+             lambda _,: locker.toggle_auto_lock()),
         Menu.SEPARATOR,
-        *delays,
+        *delay_items,
         Menu.SEPARATOR,
         item("Exit", quit_app)
     )
+
     tray_icon = pystray.Icon("ScreenLocker", image, "ScreenLocker", menu)
 
     if platform.system() == "Windows":
@@ -124,7 +112,5 @@ if __name__ == "__main__":
     locker = ScreenLocker(root, timeout_seconds=TIMEOUT)
     logging.debug("ScreenLocker initialized.")
 
-    tray_thread = threading.Thread(target=setup_tray, daemon=True)
-    tray_thread.start()
-
+    threading.Thread(target=setup_tray, daemon=True).start()
     root.mainloop()
