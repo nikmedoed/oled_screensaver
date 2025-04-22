@@ -43,8 +43,7 @@ class ScreenLocker:
         keyboard.unhook_all_hotkeys()
         keyboard.add_hotkey('ctrl+b', lambda: self.root.after(0, self.toggle_lock))
         keyboard.add_hotkey('b+ctrl', lambda: self.root.after(0, self.toggle_lock))
-        logging.debug("Hotkeys registered")
-        logging.debug("Hotkeys re-initialized")
+        logging.debug("Hotkeys registered and re-initialized")
 
     def monitor_hotkeys(self):
         self.rebind_hotkeys()
@@ -78,10 +77,8 @@ class ScreenLocker:
                 self.last_activity_time = now
                 self.last_mouse_position = current_position
             elif now - self.last_activity_time > self.timeout_seconds:
-                # вызываем lock_screen из главного потока
                 self.root.after(0, self.lock_screen)
 
-        # повторяем через 2000 мс
         self.root.after(2000, self.monitor_mouse)
 
     def lock_screen(self):
@@ -127,10 +124,7 @@ class ScreenLocker:
         window.after(CURSOR_CHECK_TIMEOUT, lambda: self.check_cursor_visibility(window))
 
     def handle_key(self, event):
-        """
-        Handles key presses in the lock window.
-        Ctrl+B unlocks the screen.
-        """
+        """Handles key presses in the lock window. Ctrl+B unlocks the screen."""
         self.last_activity_time = time.time()
         logging.debug(f"Key pressed: {event.keysym} (state: {event.state})")
 
@@ -149,7 +143,7 @@ class ScreenLocker:
             logging.debug("Screen unlocked.")
 
     def _clear_delay(self):
-        """Отменить любой запланированный _reenable_auto_lock."""
+        """Cancels any scheduled _reenable_auto_lock."""
         if self.delay_after_id is not None:
             try:
                 self.root.after_cancel(self.delay_after_id)
@@ -165,7 +159,7 @@ class ScreenLocker:
         logging.debug("Auto-lock " + ("enabled" if self.auto_lock_enabled else "disabled"))
 
     def disable_auto_lock_for(self, seconds: int):
-        """Отключает авто-блок на заданное количество секунд."""
+        """Disables auto-lock for the given number of seconds."""
         self._clear_delay()
         self.auto_lock_enabled = False
         self.delayed_until = time.time() + seconds
@@ -175,7 +169,7 @@ class ScreenLocker:
         self.delay_after_id = self.root.after(ms, self._reenable_auto_lock)
 
     def _reenable_auto_lock(self):
-        """Внутренний метод — восстанавливает авто-блок."""
+        """Internal method — re-enables auto-lock."""
         self.auto_lock_enabled = True
         self.delayed_until = None
         self.delay_after_id = None
