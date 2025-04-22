@@ -6,7 +6,7 @@ import pyautogui
 from pynput import keyboard
 
 from config import CURSOR_CHECK_TIMEOUT, MIN_KEY_INTERVAL, MIN_TOGGLE_INTERVAL
-from utils import is_taskbar_focused
+from .utils import is_taskbar_focused
 
 
 class ScreenLocker:
@@ -25,7 +25,6 @@ class ScreenLocker:
         self.auto_lock_enabled = True
         self.delayed_until: float | None = None
         self.delay_after_id: str | None = None
-        self.last_delay_label: str = ""
 
         self._last_key_time = 0.0
         self._last_toggle_time = 0.0
