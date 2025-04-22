@@ -2,3 +2,4 @@ keyboard
 Pillow
 pyautogui
 pystray
+pynput
