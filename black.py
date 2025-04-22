@@ -1,44 +1,19 @@
 import logging
 import platform
-import sys
 import tkinter as tk
 from datetime import datetime
 
 import pystray
-from PIL import Image, ImageDraw
 from pystray import MenuItem as item, Menu
 
 from ScreenSaver import ScreenLocker
-
-DEV_MODE = 'dev' in sys.argv
-TIMEOUT = 5 if DEV_MODE else 120
-SECONDS_IN_MINUTE = 1 if DEV_MODE else 60
-
-logging.basicConfig(
-    level=logging.DEBUG if DEV_MODE else logging.INFO,
-    format='[%(levelname)s] %(asctime)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-
-durations_in_minutes = [15, 30, 60, 120, 180, 240, 480, 720]
-
-
-def format_duration(minutes: int) -> str:
-    if minutes < 60:
-        return f"{minutes} minute{'s' if minutes != 1 else ''}"
-    hours = minutes // 60
-    return f"{hours} hour{'s' if hours != 1 else ''}"
-
-
-def create_tray_image():
-    width = height = 64
-    img = Image.new('RGB', (width, height), "black")
-    draw = ImageDraw.Draw(img)
-    draw.ellipse((8, 8, width - 8, height - 8), fill="white")
-    return img
+from config import DEV_MODE, TIMEOUT, SECONDS_IN_MINUTE, durations_in_minutes
+from utils import format_duration, create_tray_image
 
 
 def quit_app(icon, item):
+    logging.info("Exiting...")
+    locker.stop_listeners()
     icon.stop()
     root.after(0, root.destroy)
 
@@ -60,27 +35,17 @@ def _toggle_cb(icon, item=None):
 def setup_tray():
     image = create_tray_image()
 
-    delay_items = [
-        item(format_duration(m), make_delay_action(m))
-        for m in durations_in_minutes
-    ]
+    delay_items = [item(format_duration(m), make_delay_action(m)) for m in durations_in_minutes]
 
     menu = Menu(
-        item(
-            lambda _: f"Auto-lock {'ENABLED' if locker.auto_lock_enabled else 'DISABLED'}",
-            None,
-            enabled=False
+        item(lambda _: f"Auto-lock {'ENABLED' if locker.auto_lock_enabled else 'DISABLED'}",
+             None, enabled=False),
+        item(lambda _: (
+            f">> until "
+            f"{datetime.fromtimestamp(locker.delayed_until).strftime('%H:%M:%S')} "
+            f"({locker.last_delay_label})"
         ),
-        item(
-            lambda _: (
-                f">> until "
-                f"{datetime.fromtimestamp(locker.delayed_until).strftime('%H:%M:%S')} "
-                f"({locker.last_delay_label})"
-            ),
-            None,
-            enabled=False,
-            visible=lambda _: locker.delayed_until is not None
-        ),
+             None, enabled=False, visible=lambda _: locker.delayed_until is not None),
         item("Toggle Lock manually", _toggle_cb, default=True),
         item(lambda _: "Disable auto-lock" if locker.auto_lock_enabled else "Enable auto-lock",
              lambda _,: locker.toggle_auto_lock()),
