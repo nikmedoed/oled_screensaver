@@ -6,9 +6,9 @@ from datetime import datetime
 import pystray
 from pystray import MenuItem as item, Menu
 
-from ScreenSaver import ScreenLocker
+from src.ScreenSaver import ScreenLocker
 from config import DEV_MODE, TIMEOUT, SECONDS_IN_MINUTE, durations_in_minutes
-from utils import format_duration, create_tray_image
+from src.utils import format_duration, create_tray_image
 
 
 def quit_app(icon, item):
