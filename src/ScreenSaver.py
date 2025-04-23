@@ -33,19 +33,28 @@ class ScreenLocker:
 
         self.root.after(0, self.monitor_mouse)
 
-        self._key_listener = keyboard.Listener(on_press=self._on_any_key)
+        self.ctrl_pressed = False
+        self._key_listener = keyboard.Listener(
+            on_press=self._on_press,
+            on_release=self._on_release
+        )
         self._key_listener.start()
 
-        self._hotkey_listener = keyboard.GlobalHotKeys({
-            '<ctrl>+b': lambda: self.root.after(0, self.toggle_lock)
-        })
-        self._hotkey_listener.start()
+    def _on_press(self, key):
+        if key in (keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
+            self.ctrl_pressed = True
+        else:
+            vk = getattr(key, 'vk', None)
+            if self.ctrl_pressed and vk == 0x42:
+                self.root.after(0, self.toggle_lock)
 
-    def _on_any_key(self, key=None):
         if self.auto_lock_enabled:
             self.last_activity_time = time.time()
-            if key:
-                logging.debug(f"Key event: {key}")
+            logging.debug(f"Key event: {key}")
+
+    def _on_release(self, key):
+        if key in {keyboard.Key.ctrl_l, keyboard.Key.ctrl_r}:
+            self.ctrl_pressed = False
 
     def monitor_mouse(self):
         """Monitors mouse movements to detect activity and trigger lock after timeout."""
@@ -159,5 +168,4 @@ class ScreenLocker:
         logging.debug("Auto-lock re-enabled after delay")
 
     def stop_listeners(self):
-        self._hotkey_listener.stop()
         self._key_listener.stop()

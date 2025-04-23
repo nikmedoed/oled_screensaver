@@ -1,4 +1,5 @@
 import logging
+import signal
 import sys
 
 CURSOR_CHECK_TIMEOUT = 5000  # ms
@@ -15,4 +16,5 @@ logging.basicConfig(
 )
 logging.getLogger("PIL").setLevel(logging.WARNING)
 
-
+signal.signal(signal.SIGINT, signal.SIG_IGN)
+signal.signal(signal.SIGBREAK, signal.SIG_IGN)
