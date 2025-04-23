@@ -5,7 +5,7 @@ import tkinter as tk
 import pyautogui
 from pynput import keyboard
 
-from config import CURSOR_CHECK_TIMEOUT, MIN_TOGGLE_INTERVAL
+from config import CURSOR_CHECK_TIMEOUT, MIN_TOGGLE_INTERVAL, MOUSE_CHECK_TIMEOUT
 from .utils import is_taskbar_focused
 
 
@@ -68,7 +68,7 @@ class ScreenLocker:
                 self.last_activity_time = now
             elif now - self.last_activity_time > self.timeout_seconds:
                 self.root.after(0, self.lock_screen)
-        self.root.after(2000, self.monitor_mouse)
+        self.root.after(MOUSE_CHECK_TIMEOUT, self.monitor_mouse)
 
     def toggle_lock(self):
         """Triggers screen lock."""
@@ -90,10 +90,9 @@ class ScreenLocker:
         win = tk.Toplevel(self.root)
         win.overrideredirect(True)
         win.attributes('-topmost', True)
-        w, h = win.winfo_screenwidth(), win.winfo_screenheight()
-        win.geometry(f"{w}x{h}+0+0")
         win.config(bg="black")
         win.bind("<Button>", lambda e: self.unlock())
+        win.geometry(f"{win.winfo_screenwidth()}x{win.winfo_screenheight()}+0+0")
         win.protocol("WM_DELETE_WINDOW", lambda: None)
         win.bind('<Motion>', self.locked_mouse_motion)
         win.grab_set()
@@ -144,13 +143,12 @@ class ScreenLocker:
             except Exception:
                 pass
             self.delay_after_id = None
-            self.delayed_until = None
+        self.delayed_until = None
 
     def toggle_auto_lock(self):
         """Enables or disables auto-lock."""
         self._clear_delay()
         self.auto_lock_enabled = not self.auto_lock_enabled
-        self.delayed_until = None
         logging.debug(f"Auto-lock {'enabled' if self.auto_lock_enabled else 'disabled'}")
 
     def disable_auto_lock_for(self, seconds: int):

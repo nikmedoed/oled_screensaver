@@ -10,12 +10,18 @@ def format_duration(minutes: int) -> str:
     return f"{hours} hour{'s' if hours != 1 else ''}"
 
 
+_cached_tray_image = None
+
+
 def create_tray_image():
-    width = height = 64
-    img = Image.new('RGB', (width, height), "gray")
-    draw = ImageDraw.Draw(img)
-    draw.ellipse((8, 8, width - 8, height - 8), fill="black")
-    return img
+    global _cached_tray_image
+    if _cached_tray_image is None:
+        width = height = 64
+        img = Image.new('RGB', (width, height), "gray")
+        draw = ImageDraw.Draw(img)
+        draw.ellipse((8, 8, width - 8, height - 8), fill="black")
+        _cached_tray_image = img
+    return _cached_tray_image
 
 
 if sys.platform == 'win32':

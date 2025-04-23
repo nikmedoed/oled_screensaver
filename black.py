@@ -22,7 +22,7 @@ class TrayApp:
         self.locker = ScreenLocker(self.root, timeout_seconds=TIMEOUT)
         logging.debug("ScreenLocker initialized.")
 
-        self.icon = None
+        self.icon: pystray.Icon | None = None
         self._setup_tray()
 
     def _quit(self, icon, item):
