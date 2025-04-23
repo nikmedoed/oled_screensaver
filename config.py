@@ -2,7 +2,6 @@ import logging
 import sys
 
 CURSOR_CHECK_TIMEOUT = 5000  # ms
-MIN_KEY_INTERVAL = 0.1  # s
 MIN_TOGGLE_INTERVAL = 0.3  # s
 DEV_MODE = 'dev' in sys.argv
 TIMEOUT = 5 if DEV_MODE else 120

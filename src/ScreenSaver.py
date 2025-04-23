@@ -5,7 +5,7 @@ import tkinter as tk
 import pyautogui
 from pynput import keyboard
 
-from config import CURSOR_CHECK_TIMEOUT, MIN_KEY_INTERVAL, MIN_TOGGLE_INTERVAL
+from config import CURSOR_CHECK_TIMEOUT, MIN_TOGGLE_INTERVAL
 from .utils import is_taskbar_focused
 
 
@@ -26,7 +26,6 @@ class ScreenLocker:
         self.delayed_until: float | None = None
         self.delay_after_id: str | None = None
 
-        self._last_key_time = 0.0
         self._last_toggle_time = 0.0
 
         logging.debug(f"Initial cursor position: {self.last_mouse_position}")
@@ -42,14 +41,11 @@ class ScreenLocker:
         })
         self._hotkey_listener.start()
 
-    def _on_any_key(self, key):
-        now = time.time()
-        if now - self._last_key_time < MIN_KEY_INTERVAL:
-            return
-        self._last_key_time = now
+    def _on_any_key(self, key=None):
         if self.auto_lock_enabled:
-            self.last_activity_time = now
-            logging.debug(f"Key event: {key}")
+            self.last_activity_time = time.time()
+            if key:
+                logging.debug(f"Key event: {key}")
 
     def monitor_mouse(self):
         """Monitors mouse movements to detect activity and trigger lock after timeout."""
@@ -77,6 +73,8 @@ class ScreenLocker:
 
     def lock_screen(self):
         """Creates fullscreen black window that locks the screen."""
+        if self.locked:
+            return
         logging.debug("Activating screen lock...")
         self.locked = True
         win = tk.Toplevel(self.root)
@@ -86,27 +84,36 @@ class ScreenLocker:
         win.geometry(f"{w}x{h}+0+0")
         win.config(bg="black")
         win.bind("<Button>", lambda e: self.unlock())
-        win.bind("<Key>", lambda e: setattr(self, 'last_activity_time', time.time()))
-        win.bind("<Motion>", lambda e: setattr(self, 'last_activity_time', time.time()))
         win.protocol("WM_DELETE_WINDOW", lambda: None)
+        win.bind('<Motion>', self.locked_mouse_motion)
         win.grab_set()
         if is_taskbar_focused():
             win.focus_force()
-        win.after(CURSOR_CHECK_TIMEOUT, lambda: self._check_cursor(win))
+        win.after(CURSOR_CHECK_TIMEOUT, self.check_cursor_visibility)
         self.locker_window = win
         logging.debug("Lock window created.")
 
-    def _check_cursor(self, win: tk.Toplevel):
-        """Hides cursor if inactive for a certain period."""
-        if win.winfo_exists() and win['cursor'] != 'none':
-            if time.time() - self.last_activity_time >= CURSOR_CHECK_TIMEOUT / 1000:
-                win.config(cursor='none')
+    def locked_mouse_motion(self, event):
+        """Handles mouse motion in locked mode – updates activity and shows cursor."""
+        self.last_activity_time = time.time()
+        if self.locker_window and self.locker_window['cursor'] == 'none':
+            self.locker_window.config(cursor='')
+            logging.debug("Cursor shown due to mouse motion in locked mode.")
+
+    def check_cursor_visibility(self):
+        """Hides cursor if inactivity duration exceeds threshold."""
+        if self.locker_window is None:
+            return
+        if self.locker_window['cursor'] != 'none':
+            elapsed = time.time() - self.last_activity_time
+            if elapsed * 1000 >= CURSOR_CHECK_TIMEOUT:
+                self.locker_window.config(cursor='none')
                 logging.debug("Cursor hidden due to inactivity.")
-        win.after(CURSOR_CHECK_TIMEOUT, lambda: self._check_cursor(win))
+        self.locker_window.after(CURSOR_CHECK_TIMEOUT, self.check_cursor_visibility)
 
     def unlock(self):
         """Unlocks the screen and removes the black window."""
-        if not self.locked or not self.locker_window:
+        if not self.locker_window:
             return
         logging.debug("Unlocking screen...")
         try:

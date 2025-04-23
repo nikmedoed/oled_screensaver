@@ -36,8 +36,6 @@ class TrayApp:
             self.last_delay_label = item.text
             self.locker.disable_auto_lock_for(minutes * SECONDS_IN_MINUTE)
             logging.debug(f"Auto-lock paused for {minutes} minutes")
-            icon.update_menu()
-
         return _action
 
     def _toggle(self, icon, item=None):
