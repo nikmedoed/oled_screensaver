@@ -39,6 +39,7 @@ class ScreenLocker:
             on_release=self._on_release
         )
         self._key_listener.start()
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _on_press(self, key):
         if key in (keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
@@ -149,6 +150,7 @@ class ScreenLocker:
         """Enables or disables auto-lock."""
         self._clear_delay()
         self.auto_lock_enabled = not self.auto_lock_enabled
+        self.delayed_until = None
         logging.debug(f"Auto-lock {'enabled' if self.auto_lock_enabled else 'disabled'}")
 
     def disable_auto_lock_for(self, seconds: int):
@@ -169,3 +171,7 @@ class ScreenLocker:
 
     def stop_listeners(self):
         self._key_listener.stop()
+
+    def _on_close(self):
+        self.stop_listeners()
+        self.root.destroy()
