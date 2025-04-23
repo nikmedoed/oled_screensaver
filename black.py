@@ -36,6 +36,7 @@ class TrayApp:
             self.last_delay_label = item.text
             self.locker.disable_auto_lock_for(minutes * SECONDS_IN_MINUTE)
             logging.debug(f"Auto-lock paused for {minutes} minutes")
+
         return _action
 
     def _toggle(self, icon, item=None):
@@ -56,8 +57,7 @@ class TrayApp:
                 f">> until "
                 f"{datetime.fromtimestamp(self.locker.delayed_until).strftime('%H:%M:%S')} "
                 f"({self.last_delay_label})"
-            ),
-                 None, enabled=False, visible=lambda _: self.locker.delayed_until is not None),
+            ), None, enabled=False, visible=lambda _: self.locker.delayed_until is not None),
             item("Toggle Lock manually", self._toggle, default=True),
             item(lambda _: "Disable auto-lock" if self.locker.auto_lock_enabled else "Enable auto-lock",
                  lambda _,: self.locker.toggle_auto_lock()),
