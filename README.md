@@ -2,7 +2,8 @@
 
 **A lightweight fullscreen black screen utility to protect OLED displays from burn-in.**
 
-This script automatically shows a black fullscreen window after a period of inactivity, with global hotkey support and a tray icon for control. Ideal for OLED monitors or laptops.
+This script automatically shows a black fullscreen window after a period of inactivity, with global hotkey support and a
+tray icon for control. Ideal for OLED monitors or laptops.
 
 ---
 
@@ -13,14 +14,13 @@ This script automatically shows a black fullscreen window after a period of inac
 - **Unlock by any mouse movement or key press.**
 - **Cursor hiding** after 5 seconds of inactivity while locked.
 - **System tray menu**:
-  - Status (enabled / disabled / paused).
-  - Manual toggle.
-  - Pause auto-lock (15–720 min).
-  - Toggle auto-lock.
-  - Exit the app.
+    - Status indicator (auto-lock enabled/disabled, paused duration).
+    - Manual toggle lock.
+    - Pause auto-lock for predefined intervals (15–720 min).
+    - Enable/disable auto-lock.
+    - Exit application.
 - **Developer mode** with a 5-second timeout (`python black.py dev`).
-- **Hotkeys are re-registered every 10 seconds** for reliability.
-- Cross-platform support via `pystray`, `tkinter`, `keyboard`.
+- Cross-platform support via `pystray`, `tkinter`, `pyautogui`, `pynput`.
 
 ---
 
@@ -36,16 +36,16 @@ This script automatically shows a black fullscreen window after a period of inac
   python black.py dev
   ```
 
-- Toggle lock manually at any time with `Ctrl+B`.
+- Toggle lock manually anytime with `Ctrl+B`.
 - Auto-lock activates after 2 minutes by default.
 - Click anywhere, press a key, or move the mouse to unlock.
-- Control everything via the tray icon.
+- Control via the tray icon.
 
 ---
 
 ## ⚙️ Installation
 
-1. Make sure Python 3 is installed.
+1. Ensure Python 3 is installed.
 2. Install dependencies:
    ```bash
    pip install -r requirements.txt
@@ -53,21 +53,21 @@ This script automatically shows a black fullscreen window after a period of inac
 
    Or manually:
    ```bash
-   pip install keyboard Pillow pyautogui pystray pynput
+   pip install Pillow pyautogui pystray pynput
    ```
 
 ---
 
 ## 🚀 Autostart on Windows
 
-1. Use `screensaver.bat` or `screensaver dev.bat` from the repository.
-2. To autostart:
-   - Press `Win + R`, enter `shell:startup`, and press Enter.
-   - Copy the appropriate `.bat` file into the opened folder.
+1. Use provided batch scripts (`screensaver.bat` or `screensaver dev.bat`).
+2. Autostart setup:
+    - Press `Win + R`, type `shell:startup`, press Enter.
+    - Copy the desired `.bat` file into the startup folder.
 
-   You can also modify the `.bat` file if Python is not in your PATH:
+   Modify the `.bat` file if Python isn't in your PATH:
    ```bat
-   start "" "C:\path\to\pythonw.exe" "C:\your\project\black.py"
+   start "" "C:\path\to\pythonw.exe" "%~dp0black.py"
    ```
 
 ---
@@ -76,33 +76,37 @@ This script automatically shows a black fullscreen window after a period of inac
 
 ```
 .
-├── ScreenSaver.py           # Core screen locking logic
-├── black.py                 # App launcher and tray integration
-├── README.md                # This file
-├── requirements.txt         # Dependencies
-├── screensaver.bat          # Batch launcher for regular use
-├── screensaver dev.bat      # Batch launcher for dev mode
-└── .gitattributes           # Git configuration for line endings
+├── src/
+│   ├── ScreenSaver.py        # Core screen locking logic
+│   └── utils.py              # Helper functions
+├── black.py                  # App launcher and tray integration
+├── config.py                 # Configuration constants and settings
+├── README.md                 # This documentation
+├── requirements.txt          # Python dependencies
+├── screensaver.bat           # Batch script for regular use
+├── screensaver dev.bat       # Batch script for dev mode
+└── .gitattributes            # Git line-ending configuration
 ```
 
 ---
 
 ## 🧠 Ideas & TODO
 
-- [ ] Detect video playback (e.g., full-screen YouTube) to avoid triggering lock.
-- [ ] Add a configuration UI to change the timeout or hotkey.
-- [ ] Optional: auto-hide the black screen after activity (in auto mode).
-- [ ] Custom per-monitor support for multi-screen setups.
+- [ ] Detect video playback to avoid unintended locking.
+- [ ] Add configuration UI for customizing timeout and hotkey.
+- [ ] Optional auto-unlock after detecting user activity.
+- [ ] Enhanced multi-monitor support.
 
 ---
 
-## 🧪 Dev Notes
+## 🧪 Developer Notes
 
-- On Windows, you can left-click the tray icon to toggle the screen.
-- On Linux/macOS, the tray menu works as expected, but click behavior may vary.
-- Test hotkey conflicts with other global shortcuts before using it in production.
-- You can change the global hotkey in the `ScreenSaver.py` source.
+- Windows: Left-click tray icon to toggle screen lock.
+- Linux/macOS: Tray menu fully functional; click behavior may differ.
+- Check for hotkey conflicts on your system.
+- Customize global hotkey in `ScreenSaver.py`.
 
 ---
 
 Made with ❤️ to protect your OLED screen and your peace of mind.
+
