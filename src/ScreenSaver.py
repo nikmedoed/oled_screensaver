@@ -26,12 +26,11 @@ class ScreenLocker:
         self.delayed_until: float | None = None
         self.delay_after_id: str | None = None
 
+        self.monitor_id: str | None = None
         self._last_toggle_time = 0.0
 
         logging.debug(f"Initial cursor position: {self.last_mouse_position}")
         logging.debug(f"Timeout set to {self.timeout_seconds} seconds")
-
-        self.root.after(0, self.monitor_mouse)
 
         self.ctrl_pressed = False
         self._key_listener = keyboard.Listener(
@@ -41,6 +40,8 @@ class ScreenLocker:
         self._key_listener.start()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
+        self.start_mouse_monitor()
+
     def _on_press(self, key):
         if key in (keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
             self.ctrl_pressed = True
@@ -49,7 +50,7 @@ class ScreenLocker:
             if self.ctrl_pressed and vk == 0x42:
                 self.root.after(0, self.toggle_lock)
 
-        if self.auto_lock_enabled:
+        if self.auto_lock_enabled and not self.locked:
             self.last_activity_time = time.time()
             logging.debug(f"Key event: {key}")
 
@@ -57,18 +58,27 @@ class ScreenLocker:
         if key in {keyboard.Key.ctrl_l, keyboard.Key.ctrl_r}:
             self.ctrl_pressed = False
 
-    def monitor_mouse(self):
-        """Monitors mouse movements to detect activity and trigger lock after timeout."""
-        if self.auto_lock_enabled:
-            now = time.time()
-            pos = pyautogui.position()
-            if pos != self.last_mouse_position:
-                logging.debug(f"Mouse moved: {self.last_mouse_position} → {pos}")
-                self.last_mouse_position = pos
-                self.last_activity_time = now
-            elif now - self.last_activity_time > self.timeout_seconds:
-                self.root.after(0, self.lock_screen)
-        self.root.after(MOUSE_CHECK_TIMEOUT, self.monitor_mouse)
+    def start_mouse_monitor(self):
+        if self.monitor_id is None and self.auto_lock_enabled:
+            self.monitor_id = self.root.after(MOUSE_CHECK_TIMEOUT, self._monitor_mouse)
+
+    def _monitor_mouse(self):
+        self.monitor_id = None
+        if not self.auto_lock_enabled or self.locked:
+            return
+
+        now = time.time()
+        pos = pyautogui.position()
+
+        if pos != self.last_mouse_position:
+            logging.debug(f"Mouse moved: {self.last_mouse_position} → {pos}")
+            self.last_mouse_position = pos
+            self.last_activity_time = now
+        elif now - self.last_activity_time >= self.timeout_seconds:
+            self.root.after(0, self.lock_screen)
+            return
+
+        self.start_mouse_monitor()
 
     def toggle_lock(self):
         """Triggers screen lock."""
@@ -85,6 +95,7 @@ class ScreenLocker:
         """Creates fullscreen black window that locks the screen."""
         if self.locked:
             return
+        self._cancel_monitor()
         logging.debug("Activating screen lock...")
         self.locked = True
         win = tk.Toplevel(self.root)
@@ -135,6 +146,8 @@ class ScreenLocker:
         self.last_activity_time = time.time()
         logging.debug("Screen unlocked.")
 
+        self.start_mouse_monitor()
+
     def _clear_delay(self):
         """Cancels any scheduled _reenable_auto_lock."""
         if self.delay_after_id:
@@ -145,20 +158,31 @@ class ScreenLocker:
             self.delay_after_id = None
         self.delayed_until = None
 
+    def _cancel_monitor(self):
+        if self.monitor_id:
+            self.root.after_cancel(self.monitor_id)
+            self.monitor_id = None
+
     def toggle_auto_lock(self):
         """Enables or disables auto-lock."""
         self._clear_delay()
         self.auto_lock_enabled = not self.auto_lock_enabled
         logging.debug(f"Auto-lock {'enabled' if self.auto_lock_enabled else 'disabled'}")
 
+        if self.auto_lock_enabled:
+            self.start_mouse_monitor()
+        else:
+            self._cancel_monitor()
+
     def disable_auto_lock_for(self, seconds: int):
         """Disables auto-lock for the given number of seconds."""
         self._clear_delay()
         self.auto_lock_enabled = False
         self.delayed_until = time.time() + seconds
-        logging.debug(f"Auto-lock disabled for {seconds} seconds (until {self.delayed_until})")
-        ms = int(seconds * 1000)
-        self.delay_after_id = self.root.after(ms, self._reenable_auto_lock)
+        self._cancel_monitor()
+
+        self.delay_after_id = self.root.after(seconds * 1000, self._reenable_auto_lock)
+        logging.debug(f"Auto-lock DISABLED for {seconds} s")
 
     def _reenable_auto_lock(self):
         """Internal method — re-enables auto-lock."""
@@ -166,6 +190,7 @@ class ScreenLocker:
         self.delayed_until = None
         self.delay_after_id = None
         logging.debug("Auto-lock re-enabled after delay")
+        self.start_mouse_monitor()
 
     def stop_listeners(self):
         self._key_listener.stop()

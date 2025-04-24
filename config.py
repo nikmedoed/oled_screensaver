@@ -11,8 +11,8 @@ durations_in_minutes = [15, 30, 60, 120, 180, 240, 480, 720]
 
 logging.basicConfig(
     level=logging.DEBUG if DEV_MODE else logging.INFO,
-    format='[%(levelname)s] %(asctime)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format='%(asctime)s: %(message)s',
+    datefmt='%H:%M:%S'
 )
 logging.getLogger("PIL").setLevel(logging.WARNING)
 
