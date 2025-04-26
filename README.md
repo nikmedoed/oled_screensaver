@@ -106,6 +106,11 @@ tray icon for control. Ideal for OLED monitors or laptops.
 - Check for hotkey conflicts on your system.
 - Customize global hotkey in `ScreenSaver.py`.
 
+Windows build
+```powershell
+pyinstaller --clean --onefile --windowed --name oledSaver --icon "$PWD\icon\icon.ico" black.py
+```
+
 ---
 
 Made with ❤️ to protect your OLED screen and your peace of mind.
