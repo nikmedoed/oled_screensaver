@@ -1,0 +1,90 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'        # реагируем на любой тег, начинающийся с "v"
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pyinstaller
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        shell: bash
+
+      - name: Build executable
+        run: |
+          pyinstaller --clean \
+                      --onefile \
+                      --windowed \
+                      --name oledSaver \
+                      --icon icon/icon.ico \
+                      black.py
+        shell: bash
+
+      - name: Package (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          cd dist
+          tar -czvf oledSaver-${{ runner.os }}-${{ github.ref_name }}.tar.gz oledSaver
+        shell: bash
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cd dist
+          powershell -Command "Compress-Archive -Path oledSaver.exe -DestinationPath oledSaver-Windows-${{ github.ref_name }}.zip"
+        shell: bash
+
+      - name: Create GitHub Release
+        if: runner.os == 'Linux'                            # создаём релиз только один раз
+        id: create_release
+        uses: actions/create-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Linux asset
+        if: runner.os == 'Linux'
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: dist/ oledSaver-Linux-${{ github.ref_name }}.tar.gz
+          asset_name: oledSaver-Linux-${{ github.ref_name }}.tar.gz
+          asset_content_type: application/gzip
+
+      - name: Upload macOS asset
+        if: runner.os == 'macOS'
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: dist/ oledSaver-macOS-${{ github.ref_name }}.tar.gz
+          asset_name: oledSaver-macOS-${{ github.ref_name }}.tar.gz
+          asset_content_type: application/gzip
+
+      - name: Upload Windows asset
+        if: runner.os == 'Windows'
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: dist/ oledSaver-Windows-${{ github.ref_name }}.zip
+          asset_name: oledSaver-Windows-${{ github.ref_name }}.zip
+          asset_content_type: application/zip
