@@ -2,3 +2,4 @@ Pillow
 pyautogui
 pystray
 pynput
+pyinstaller

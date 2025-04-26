@@ -10,7 +10,7 @@ tray icon for control. Ideal for OLED monitors or laptops.
 ## ✅ Features
 
 - **Auto-activation** after 2 minutes of inactivity (keyboard & mouse).
-- **Global hotkey** `Ctrl+B` to manually toggle the black screen.
+- **Global hotkey** `Ctrl+Shift+B` to manually toggle the black screen.
 - **Unlock by any mouse movement or key press.**
 - **Cursor hiding** after 5 seconds of inactivity while locked.
 - **System tray menu**:
@@ -36,7 +36,7 @@ tray icon for control. Ideal for OLED monitors or laptops.
   python black.py dev
   ```
 
-- Toggle lock manually anytime with `Ctrl+B`.
+- Toggle lock manually anytime with `Ctrl+Shift+B`.
 - Auto-lock activates after 2 minutes by default.
 - Click anywhere, press a key, or move the mouse to unlock.
 - Control via the tray icon.

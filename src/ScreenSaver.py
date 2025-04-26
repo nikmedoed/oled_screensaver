@@ -33,6 +33,7 @@ class ScreenLocker:
         logging.debug(f"Timeout set to {self.timeout_seconds} seconds")
 
         self.ctrl_pressed = False
+        self.shift_pressed = False
         self._key_listener = keyboard.Listener(
             on_press=self._on_press,
             on_release=self._on_release
@@ -45,9 +46,11 @@ class ScreenLocker:
     def _on_press(self, key):
         if key in (keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
             self.ctrl_pressed = True
+        elif key in (keyboard.Key.shift, keyboard.Key.shift_l, keyboard.Key.shift_r):
+            self.shift_pressed = True
         else:
             vk = getattr(key, 'vk', None)
-            if self.ctrl_pressed and vk == 0x42:
+            if self.ctrl_pressed and self.shift_pressed and vk == 0x42:
                 self.root.after(0, self.toggle_lock)
 
         if self.auto_lock_enabled and not self.locked:
@@ -57,6 +60,8 @@ class ScreenLocker:
     def _on_release(self, key):
         if key in {keyboard.Key.ctrl_l, keyboard.Key.ctrl_r}:
             self.ctrl_pressed = False
+        elif key in (keyboard.Key.shift, keyboard.Key.shift_l, keyboard.Key.shift_r):
+            self.shift_pressed = False
 
     def start_mouse_monitor(self):
         if self.monitor_id is None and self.auto_lock_enabled:
