@@ -1,4 +1,5 @@
 import logging
+import os
 import signal
 import sys
 
@@ -19,3 +20,4 @@ logging.getLogger("PIL").setLevel(logging.WARNING)
 signal.signal(signal.SIGINT, signal.SIG_IGN)
 signal.signal(signal.SIGBREAK, signal.SIG_IGN)
 MOUSE_CHECK_TIMEOUT = 2000
+PID_FILE = os.path.expanduser("~/.screensaver_tray.pid")

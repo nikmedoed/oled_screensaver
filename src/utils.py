@@ -1,6 +1,13 @@
+import logging
+import os
+import platform
+import signal
 import sys
+import time
 
 from PIL import Image, ImageDraw
+
+from config import PID_FILE
 
 
 def format_duration(minutes: int) -> str:
@@ -44,3 +51,39 @@ if sys.platform == 'win32':
 else:
     def is_taskbar_focused() -> bool:
         return False
+
+
+def terminate_pid(pid: int):
+    """Terminate the given PID: SIGTERM on POSIX, TerminateProcess on Windows."""
+    try:
+        if platform.system() == "Windows":
+            PROCESS_TERMINATE = 0x0001
+            handle = ctypes.windll.kernel32.OpenProcess(PROCESS_TERMINATE, False, pid)
+            if handle:
+                ctypes.windll.kernel32.TerminateProcess(handle, -1)
+                ctypes.windll.kernel32.CloseHandle(handle)
+        else:
+            os.kill(pid, signal.SIGTERM)
+    except Exception as e:
+        logging.debug(f"Failed to terminate old instance {pid}: {e}")
+
+
+def kill_previous_instance():
+    """Kill previous running instance if exists and write our PID."""
+    if os.path.exists(PID_FILE):
+        try:
+            with open(PID_FILE, "r") as f:
+                old_pid = int(f.read().strip())
+            terminate_pid(old_pid)
+            time.sleep(0.5)
+        except Exception as ex:
+            logging.debug(f"Error reading/killing previous PID: {ex}")
+        try:
+            os.remove(PID_FILE)
+        except OSError:
+            pass
+    try:
+        with open(PID_FILE, "w") as f:
+            f.write(str(os.getpid()))
+    except Exception as ex:
+        logging.debug(f"Error writing PID file: {ex}")
