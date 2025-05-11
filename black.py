@@ -1,3 +1,6 @@
+from src.error_logging import init_error_logging
+
+init_error_logging()
 import logging
 import os
 import platform
@@ -6,7 +9,6 @@ from datetime import datetime
 
 import pystray
 from pystray import MenuItem as item, Menu
-
 from config import DEV_MODE, TIMEOUT, SECONDS_IN_MINUTE, durations_in_minutes, PID_FILE
 from src.ScreenSaver import ScreenLocker
 from src.utils import format_duration, create_tray_image, kill_previous_instance
@@ -88,7 +90,7 @@ class TrayApp:
         """Periodically check if icon thread is alive; restart if it died."""
         try:
             if self._icon_thread and not self._icon_thread.is_alive():
-                logging.warning("Tray icon thread died — restarting...")
+                logging.error("Tray icon thread died — restarting...")
                 try:
                     self.icon.stop()
                 except Exception:
