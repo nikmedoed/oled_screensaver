@@ -4,6 +4,7 @@ init_error_logging()
 import logging
 import os
 import platform
+import threading
 import tkinter as tk
 from datetime import datetime
 
@@ -82,15 +83,24 @@ class TrayApp:
             pass
 
     def _start_icon(self):
-        """Run the tray icon detached and keep its thread reference."""
-        self.icon.run_detached()
-        self._icon_thread = getattr(self.icon, "_thread", None)
+        """Запускаем self.icon.run() в нашем потоке и ловим все исключения."""
+
+        def _icon_worker():
+            try:
+                self.icon.run()
+            except Exception:
+                # сюда попадут любые падения PyStray
+                logging.error("Tray icon thread crashed", exc_info=True)
+
+        t = threading.Thread(target=_icon_worker, name="TrayIconThread", daemon=True)
+        t.start()
+        self._icon_thread = t
 
     def _schedule_icon_check(self):
         """Periodically check if icon thread is alive; restart if it died."""
         try:
             if self._icon_thread and not self._icon_thread.is_alive():
-                logging.error("Tray icon thread died — restarting...")
+                logging.error("Tray icon thread died — restarting...", exc_info=True)
                 try:
                     self.icon.stop()
                 except Exception:
