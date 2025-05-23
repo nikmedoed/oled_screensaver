@@ -26,7 +26,11 @@ class LazyErrorFileHandler(logging.Handler):
 
 
 def init_error_logging(filename: str = "screensaver_errors.log") -> None:
-    log_path = Path(__file__).resolve().parent.parent / filename
+    if getattr(sys, "frozen", False):
+        base_dir = Path(sys.executable).parent
+    else:
+        base_dir = Path(__file__).resolve().parent.parent
+    log_path = base_dir / filename
     handler = LazyErrorFileHandler(log_path)
     logging.getLogger().addHandler(handler)
 

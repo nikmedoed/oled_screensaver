@@ -1,10 +1,23 @@
 from src.error_logging import init_error_logging
 
 init_error_logging()
+
 import logging
 import os
+
+LOG_FILE = os.path.expanduser('~/.screensaver_full.log')
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s %(levelname)s %(name)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    handlers=[
+        logging.FileHandler(LOG_FILE, mode='a', encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+logging.getLogger('pystray').setLevel(logging.DEBUG)
+
 import platform
-import threading
 import tkinter as tk
 from datetime import datetime
 
@@ -27,9 +40,9 @@ class TrayApp:
         logging.debug("ScreenLocker initialized.")
 
         self.icon: pystray.Icon | None = None
-        self._icon_thread = None
 
         self._setup_tray()
+        self.icon.run_detached()
 
     def _setup_tray(self):
         image = create_tray_image()
@@ -60,6 +73,7 @@ class TrayApp:
         else:
             self.icon.on_clicked = self._toggle
 
+
     def _make_delay_action(self, minutes):
         def _action(icon, item):
             self.last_delay_label = item.text
@@ -82,42 +96,8 @@ class TrayApp:
         except Exception:
             pass
 
-    def _start_icon(self):
-        """Запускаем self.icon.run() в нашем потоке и ловим все исключения."""
-
-        def _icon_worker():
-            try:
-                self.icon.run()
-            except Exception:
-                # сюда попадут любые падения PyStray
-                logging.error("Tray icon thread crashed", exc_info=True)
-
-        t = threading.Thread(target=_icon_worker, name="TrayIconThread", daemon=True)
-        t.start()
-        self._icon_thread = t
-
-    def _schedule_icon_check(self):
-        """Periodically check if icon thread is alive; restart if it died."""
-        try:
-            if self._icon_thread and not self._icon_thread.is_alive():
-                logging.error("Tray icon thread died — restarting...", exc_info=True)
-                try:
-                    self.icon.stop()
-                except Exception:
-                    pass
-                self._setup_tray()
-                self._start_icon()
-        except Exception as e:
-            logging.debug(f"Error checking tray thread: {e}")
-        finally:
-            self.root.after(10_000, self._schedule_icon_check)
-
-    def run(self):
-        self._start_icon()
-        self._schedule_icon_check()
-        self.root.mainloop()
-
 
 if __name__ == "__main__":
     kill_previous_instance()
-    TrayApp().run()
+    app = TrayApp()
+    app.root.mainloop()
