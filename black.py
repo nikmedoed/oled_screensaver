@@ -18,6 +18,7 @@ logging.basicConfig(
 logging.getLogger('pystray').setLevel(logging.DEBUG)
 
 import platform
+import queue
 import tkinter as tk
 from datetime import datetime
 
@@ -33,20 +34,22 @@ class TrayApp:
         if DEV_MODE:
             logging.info("Running in developer mode")
 
-        self.last_delay_label: str = ""
+        self._gui_queue = queue.Queue()
+
+        self.last_delay_label = ""
         self.root = tk.Tk()
         self.root.withdraw()
         self.locker = ScreenLocker(self.root, timeout_seconds=TIMEOUT)
-        logging.debug("ScreenLocker initialized.")
 
-        self.icon: pystray.Icon | None = None
-
+        self.icon = None
         self._setup_tray()
         self.icon.run_detached()
 
+        self.root.after(30, self._process_gui_queue)
+        self.root.after(30_000, self._refresh_icon)
+
     def _setup_tray(self):
         image = create_tray_image()
-
         delay_items = [item(format_duration(m), self._make_delay_action(m))
                        for m in durations_in_minutes]
 
@@ -55,12 +58,12 @@ class TrayApp:
                  None, enabled=False),
             item(lambda _: (
                 f">> until "
-                f"{datetime.fromtimestamp(self.locker.delayed_until).strftime('%H:%M:%S')} "
+                f"{datetime.fromtimestamp(self.locker.delayed_until):%H:%M:%S} "
                 f"({self.last_delay_label})"
             ), None, enabled=False, visible=lambda _: self.locker.delayed_until is not None),
             item("Toggle Lock manually", self._toggle, default=True),
             item(lambda _: "Disable auto-lock" if self.locker.auto_lock_enabled else "Enable auto-lock",
-                 lambda _,: self.locker.toggle_auto_lock()),
+                 lambda _,: self._call_in_gui(self.locker.toggle_auto_lock)),
             Menu.SEPARATOR,
             *delay_items,
             Menu.SEPARATOR,
@@ -73,28 +76,56 @@ class TrayApp:
         else:
             self.icon.on_clicked = self._toggle
 
+    def _call_in_gui(self, fn, /, *args, **kwargs):
+        self._gui_queue.put(lambda: fn(*args, **kwargs))
+
+    def _process_gui_queue(self):
+        while True:
+            try:
+                task = self._gui_queue.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                task()
+            except Exception:
+                logging.exception("GUI task failed")
+        self.root.after(30, self._process_gui_queue)
+
+    def _refresh_icon(self):
+        try:
+            if self.icon:
+                self.icon.stop()
+            self._setup_tray()
+            self.icon.run_detached()
+            logging.debug("Tray-icon hard-recreated")
+        except Exception:
+            logging.exception("Hard refresh failed")
+        finally:
+            self.root.after(10_000, self._refresh_icon)
 
     def _make_delay_action(self, minutes):
         def _action(icon, item):
             self.last_delay_label = item.text
-            self.locker.disable_auto_lock_for(minutes * SECONDS_IN_MINUTE)
-            logging.debug(f"Auto-lock paused for {minutes} minutes")
+            self._call_in_gui(self.locker.disable_auto_lock_for,
+                              minutes * SECONDS_IN_MINUTE)
 
         return _action
 
     def _toggle(self, icon, item=None):
-        self.root.after(0, self.locker.toggle_lock)
+        self._call_in_gui(self.locker.toggle_lock)
 
     def _quit(self, icon, item):
+        self._call_in_gui(self._quit_gui)
+
+    def _quit_gui(self):
         logging.info("Exiting...")
         self.locker.stop_listeners()
-        icon.stop()
-        self.root.after(0, self.root.destroy)
-        # cleanup PID file
+        self.icon.stop()
         try:
             os.remove(PID_FILE)
         except Exception:
             pass
+        self.root.destroy()
 
 
 if __name__ == "__main__":
