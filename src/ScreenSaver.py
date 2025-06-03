@@ -1,6 +1,7 @@
 import logging
 import time
 import tkinter as tk
+from typing import Optional, Callable
 
 import pyautogui
 from pynput import keyboard
@@ -10,11 +11,12 @@ from .utils import is_taskbar_focused
 
 
 class ScreenLocker:
-    def __init__(self, root: tk.Tk, timeout_seconds: int):
-        """
-        root - tkinter root object.
-        timeout_seconds - inactivity period before the screen is locked.
-        """
+    def __init__(
+            self,
+            root: tk.Tk,
+            timeout_seconds: int,
+            on_unlock: Optional[Callable[[], None]] = None
+    ):
         self.root = root
         self.timeout_seconds = timeout_seconds
         self.last_activity_time = time.time()
@@ -28,9 +30,7 @@ class ScreenLocker:
 
         self.monitor_id: str | None = None
         self._last_toggle_time = 0.0
-
-        logging.debug(f"Initial cursor position: {self.last_mouse_position}")
-        logging.debug(f"Timeout set to {self.timeout_seconds} seconds")
+        self._on_unlock = on_unlock  # ← callback
 
         self.ctrl_pressed = False
         self.shift_pressed = False
@@ -150,6 +150,12 @@ class ScreenLocker:
         self.locked = False
         self.last_activity_time = time.time()
         logging.debug("Screen unlocked.")
+
+        if self._on_unlock:
+            try:
+                self._on_unlock()
+            except Exception as e:
+                logging.debug(f"on_unlock callback error: {e}")
 
         self.start_mouse_monitor()
 
