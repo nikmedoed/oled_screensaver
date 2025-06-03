@@ -20,30 +20,39 @@ class TrayApp:
         self.last_delay_label: str = ""
         self.root = tk.Tk()
         self.root.withdraw()
-        self.locker = ScreenLocker(self.root, timeout_seconds=TIMEOUT)
-        logging.debug("ScreenLocker initialized.")
+
+        self.locker = ScreenLocker(
+            self.root,
+            timeout_seconds=TIMEOUT,
+            on_unlock=self._recreate_icon_after_unlock
+        )
 
         self.icon: pystray.Icon | None = None
         self._icon_thread = None
-
         self._setup_tray()
 
     def _setup_tray(self):
         image = create_tray_image()
 
-        delay_items = [item(format_duration(m), self._make_delay_action(m))
-                       for m in durations_in_minutes]
+        delay_items = [
+            item(format_duration(m), self._make_delay_action(m))
+            for m in durations_in_minutes
+        ]
 
         menu = Menu(
-            item(lambda _: f"Auto-lock {'ENABLED' if self.locker.auto_lock_enabled else 'DISABLED'}",
+            item(lambda _:
+                 f"Auto-lock {'ENABLED' if self.locker.auto_lock_enabled else 'DISABLED'}",
                  None, enabled=False),
-            item(lambda _: (
-                f">> until "
-                f"{datetime.fromtimestamp(self.locker.delayed_until).strftime('%H:%M:%S')} "
-                f"({self.last_delay_label})"
-            ), None, enabled=False, visible=lambda _: self.locker.delayed_until is not None),
+            item(lambda _:
+                 f">> until "
+                 f"{datetime.fromtimestamp(self.locker.delayed_until).strftime('%H:%M:%S')} "
+                 f"({self.last_delay_label})",
+                 None, enabled=False,
+                 visible=lambda _:
+                 self.locker.delayed_until is not None),
             item("Toggle Lock manually", self._toggle, default=True),
-            item(lambda _: "Disable auto-lock" if self.locker.auto_lock_enabled else "Enable auto-lock",
+            item(lambda _:
+                 "Disable auto-lock" if self.locker.auto_lock_enabled else "Enable auto-lock",
                  lambda _,: self.locker.toggle_auto_lock()),
             Menu.SEPARATOR,
             *delay_items,
@@ -56,6 +65,24 @@ class TrayApp:
             self.icon._on_left_up = self._toggle
         else:
             self.icon.on_clicked = self._toggle
+
+    def _start_icon(self):
+        self.icon.run_detached()
+        self._icon_thread = getattr(self.icon, "_thread", None)
+
+    def _recreate_icon_after_unlock(self):
+        """Вызывается ScreenLocker'ом сразу после разблокировки."""
+        try:
+            if self.icon:
+                self.icon.stop()
+            if self._icon_thread and self._icon_thread.is_alive():
+                self._icon_thread.join(timeout=1)
+        except Exception as e:
+            logging.debug(f"Error stopping old icon: {e}")
+
+        self._setup_tray()
+        self._start_icon()
+        logging.debug("Tray icon recreated after unlock")
 
     def _make_delay_action(self, minutes):
         def _action(icon, item):
@@ -73,28 +100,16 @@ class TrayApp:
         self.locker.stop_listeners()
         icon.stop()
         self.root.after(0, self.root.destroy)
-        # cleanup PID file
         try:
             os.remove(PID_FILE)
         except Exception:
             pass
 
-    def _start_icon(self):
-        """Run the tray icon detached and keep its thread reference."""
-        self.icon.run_detached()
-        self._icon_thread = getattr(self.icon, "_thread", None)
-
     def _schedule_icon_check(self):
-        """Periodically check if icon thread is alive; restart if it died."""
         try:
             if self._icon_thread and not self._icon_thread.is_alive():
                 logging.warning("Tray icon thread died — restarting...")
-                try:
-                    self.icon.stop()
-                except Exception:
-                    pass
-                self._setup_tray()
-                self._start_icon()
+                self._recreate_icon_after_unlock()
         except Exception as e:
             logging.debug(f"Error checking tray thread: {e}")
         finally:
