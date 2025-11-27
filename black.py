@@ -2,20 +2,20 @@ import logging
 import os
 import platform
 import tkinter as tk
-from tkinter import ttk, messagebox
 from datetime import datetime
+from tkinter import ttk, messagebox
 
 import pystray
 from PIL import ImageTk
 from pystray import MenuItem as item, Menu
 
+from src.ScreenSaver import ScreenLocker
 from src.config import (
     DEV_MODE,
     SECONDS_IN_MINUTE,
     PID_FILE,
-    VISUAL_SAMPLE_MARGINS, SettingsStore,
+    SettingsStore,
 )
-from src.ScreenSaver import ScreenLocker
 from src.utils import format_duration, create_tray_image, kill_previous_instance
 
 
@@ -380,7 +380,10 @@ class TrayApp:
         })
         self.settings.save()
 
-        self.locker.timeout_seconds = timeout_seconds
+        if hasattr(self.locker, "update_timeout"):
+            self.locker.update_timeout(timeout_seconds)
+        else:
+            self.locker.timeout_seconds = timeout_seconds
         if hasattr(self.locker, "update_visual_settings"):
             self.locker.update_visual_settings(
                 visual_monitor_enabled,

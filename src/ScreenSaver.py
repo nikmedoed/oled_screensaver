@@ -56,7 +56,16 @@ class ScreenLocker:
         self._key_listener.start()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
+        self._apply_timeout_settings(timeout_seconds)
         self.start_mouse_monitor()
+
+    def _apply_timeout_settings(self, timeout_seconds: int):
+        self.timeout_seconds = timeout_seconds
+        self._visual_start_delay = max(1.0, timeout_seconds / 2)
+        self._visual_interval = self._visual_start_delay
+
+    def update_timeout(self, timeout_seconds: int):
+        self._apply_timeout_settings(timeout_seconds)
 
     def _on_press(self, key):
         if key in (keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
@@ -250,7 +259,7 @@ class ScreenLocker:
     def _maybe_schedule_visual_check(self, now: float):
         """Schedules a visual snapshot if inactivity exceeded the start delay."""
         if (self._visual_check_id or self.locked or not self.auto_lock_enabled or
-                not self.visual_detection_enabled):
+                not self.visual_detection_enabled or self._visual_baseline is not None):
             return
         if now - self.last_activity_time >= self._visual_start_delay:
             self._visual_check_id = self.root.after(0, self._scheduled_visual_check)
@@ -262,14 +271,6 @@ class ScreenLocker:
         if detected:
             return
 
-        if not self.locked and self.auto_lock_enabled:
-            elapsed = time.time() - self.last_activity_time
-            if elapsed >= self._visual_start_delay:
-                self._visual_check_id = self.root.after(
-                    int(self._visual_interval * 1000),
-                    self._scheduled_visual_check
-                )
-
     def _visual_check(self, force: bool = False) -> bool:
         """Compares screenshots to detect motion; returns True if activity detected."""
         if (self.locked or not self.auto_lock_enabled or
@@ -279,24 +280,28 @@ class ScreenLocker:
 
         now = time.time()
         elapsed = now - self.last_activity_time
-        if not force and elapsed < self._visual_start_delay:
+        if self._visual_baseline is None:
+            if elapsed < self._visual_start_delay:
+                return False
+            snapshot = self._capture_sample()
+            if snapshot is None:
+                return False
+            self._visual_baseline = snapshot
+            logging.debug("Visual baseline captured.")
+            return False
+
+        if not force and elapsed < self.timeout_seconds:
             return False
 
         snapshot = self._capture_sample()
         if snapshot is None:
             return False
 
-        if self._visual_baseline is None:
-            self._visual_baseline = snapshot
-            logging.debug("Visual baseline captured.")
-            return False
-
         change_ratio = calc_change_ratio(self._visual_baseline, snapshot)
         self._visual_baseline = snapshot
-        logging.debug(f"Visual change ratio: {change_ratio:.4f}")
+        logging.debug(f"Visual change: {change_ratio * 100:.2f}% / {self._visual_change_threshold * 100:.2f}")
 
         if change_ratio >= self._visual_change_threshold:
-            logging.debug(f"Visual activity detected ({change_ratio * 100:.2f}% change)")
             self._mark_activity(now)
             return True
         return False
