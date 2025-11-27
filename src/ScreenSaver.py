@@ -7,13 +7,13 @@ import pyautogui
 from pynput import keyboard
 
 from config import (
-    CURSOR_CHECK_TIMEOUT,
+    CURSOR_HIDE_CHECK_TIMEOUT,
     MIN_TOGGLE_INTERVAL,
     MOUSE_CHECK_TIMEOUT,
     VISUAL_START_DELAY,
     VISUAL_CHECK_INTERVAL,
     VISUAL_CHANGE_THRESHOLD,
-    VISUAL_SAMPLE_RATIO,
+    VISUAL_SAMPLE_MARGINS,
 )
 from .utils import is_taskbar_focused, calc_change_ratio
 
@@ -42,7 +42,7 @@ class ScreenLocker:
         self._visual_start_delay = VISUAL_START_DELAY
         self._visual_interval = VISUAL_CHECK_INTERVAL
         self._visual_change_threshold = VISUAL_CHANGE_THRESHOLD
-        self._visual_sample_ratio = VISUAL_SAMPLE_RATIO
+        self._visual_margins = VISUAL_SAMPLE_MARGINS
         self._last_toggle_time = 0.0
         self._on_unlock = on_unlock  # ← callback
 
@@ -134,7 +134,7 @@ class ScreenLocker:
         win.grab_set()
         if is_taskbar_focused():
             win.focus_force()
-        win.after(CURSOR_CHECK_TIMEOUT, self.check_cursor_visibility)
+        win.after(CURSOR_HIDE_CHECK_TIMEOUT, self.check_cursor_visibility)
         self.locker_window = win
         logging.debug("Lock window created.")
 
@@ -151,10 +151,10 @@ class ScreenLocker:
             return
         if self.locker_window['cursor'] != 'none':
             elapsed = time.time() - self.last_activity_time
-            if elapsed * 1000 >= CURSOR_CHECK_TIMEOUT:
+            if elapsed * 1000 >= CURSOR_HIDE_CHECK_TIMEOUT:
                 self.locker_window.config(cursor='none')
                 logging.debug("Cursor hidden due to inactivity.")
-        self.locker_window.after(CURSOR_CHECK_TIMEOUT, self.check_cursor_visibility)
+        self.locker_window.after(CURSOR_HIDE_CHECK_TIMEOUT, self.check_cursor_visibility)
 
     def unlock(self):
         """Unlocks the screen and removes the black window."""
@@ -299,24 +299,34 @@ class ScreenLocker:
         return False
 
     def _capture_sample(self):
-        """Takes a downscaled grayscale screenshot of the center area to reduce CPU use."""
+        """Takes a downscaled grayscale screenshot of the configured area to reduce CPU use."""
         try:
             width = self.root.winfo_screenwidth()
             height = self.root.winfo_screenheight()
-            total_area = width * height
-            sample_area = max(1, int(total_area * self._visual_sample_ratio))
-            aspect = width / height if height else 1.0
+            margins = self._visual_margins or {}
 
-            # Keep same aspect as the screen so central box covers the requested area fraction.
-            box_w = int((sample_area * aspect) ** 0.5)
-            box_h = max(1, int(sample_area / max(box_w, 1)))
+            def _pct(key: str) -> float:
+                value = margins.get(key, 0.0)
+                try:
+                    return max(0.0, min(100.0, float(value)))
+                except (TypeError, ValueError):
+                    return 0.0
 
-            box_w = min(width, box_w)
-            box_h = min(height, box_h)
+            left_px = int(width * _pct("left") / 100.0)
+            right_px = int(width * _pct("right") / 100.0)
+            top_px = int(height * _pct("top") / 100.0)
+            bottom_px = int(height * _pct("bottom") / 100.0)
 
-            left = max(0, (width - box_w) // 2)
-            top = max(0, (height - box_h) // 2)
-            img = pyautogui.screenshot(region=(left, top, box_w, box_h))
+            if left_px + right_px >= width:
+                left_px = 0
+                right_px = 0
+            if top_px + bottom_px >= height:
+                top_px = 0
+                bottom_px = 0
+
+            box_w = max(1, width - left_px - right_px)
+            box_h = max(1, height - top_px - bottom_px)
+            img = pyautogui.screenshot(region=(left_px, top_px, box_w, box_h))
             scaled_w = 320 if box_w >= 320 else box_w
             scaled_h = max(90, int(box_h * scaled_w / max(box_w, 1)))
             return img.resize((scaled_w, scaled_h)).convert("L")
