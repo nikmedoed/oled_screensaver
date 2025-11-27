@@ -5,7 +5,7 @@ import signal
 import sys
 import time
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageChops
 
 from config import PID_FILE
 
@@ -87,3 +87,14 @@ def kill_previous_instance():
             f.write(str(os.getpid()))
     except Exception as ex:
         logging.debug(f"Error writing PID file: {ex}")
+
+
+def calc_change_ratio(img_a, img_b) -> float:
+    """Returns normalized difference (0..1) between two grayscale images."""
+    if img_a.size != img_b.size:
+        img_b = img_b.resize(img_a.size)
+    diff = ImageChops.difference(img_a, img_b)
+    hist = diff.histogram()
+    total_pixels = img_a.size[0] * img_a.size[1]
+    diff_sum = sum(value * count for value, count in enumerate(hist))
+    return diff_sum / (255 * total_pixels if total_pixels else 1)

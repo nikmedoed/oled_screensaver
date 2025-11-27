@@ -6,8 +6,16 @@ from typing import Optional, Callable
 import pyautogui
 from pynput import keyboard
 
-from config import CURSOR_CHECK_TIMEOUT, MIN_TOGGLE_INTERVAL, MOUSE_CHECK_TIMEOUT
-from .utils import is_taskbar_focused
+from config import (
+    CURSOR_CHECK_TIMEOUT,
+    MIN_TOGGLE_INTERVAL,
+    MOUSE_CHECK_TIMEOUT,
+    VISUAL_START_DELAY,
+    VISUAL_CHECK_INTERVAL,
+    VISUAL_CHANGE_THRESHOLD,
+    VISUAL_SAMPLE_RATIO,
+)
+from .utils import is_taskbar_focused, calc_change_ratio
 
 
 class ScreenLocker:
@@ -29,6 +37,12 @@ class ScreenLocker:
         self.delay_after_id: str | None = None
 
         self.monitor_id: str | None = None
+        self._visual_check_id: str | None = None
+        self._visual_baseline = None
+        self._visual_start_delay = VISUAL_START_DELAY
+        self._visual_interval = VISUAL_CHECK_INTERVAL
+        self._visual_change_threshold = VISUAL_CHANGE_THRESHOLD
+        self._visual_sample_ratio = VISUAL_SAMPLE_RATIO
         self._last_toggle_time = 0.0
         self._on_unlock = on_unlock  # ← callback
 
@@ -54,7 +68,7 @@ class ScreenLocker:
                 self.root.after(0, self.toggle_lock)
 
         if self.auto_lock_enabled and not self.locked:
-            self.last_activity_time = time.time()
+            self._mark_activity()
             logging.debug(f"Key event: {key}")
 
     def _on_release(self, key):
@@ -78,10 +92,16 @@ class ScreenLocker:
         if pos != self.last_mouse_position:
             logging.debug(f"Mouse moved: {self.last_mouse_position} → {pos}")
             self.last_mouse_position = pos
-            self.last_activity_time = now
-        elif now - self.last_activity_time >= self.timeout_seconds:
-            self.root.after(0, self.lock_screen)
-            return
+            self._mark_activity(now)
+        else:
+            elapsed = now - self.last_activity_time
+            if elapsed >= self.timeout_seconds:
+                if self._visual_check(force=True):
+                    self.start_mouse_monitor()
+                    return
+                self.root.after(0, self.lock_screen)
+                return
+            self._maybe_schedule_visual_check(now)
 
         self.start_mouse_monitor()
 
@@ -120,7 +140,7 @@ class ScreenLocker:
 
     def locked_mouse_motion(self, event):
         """Handles mouse motion in locked mode – updates activity and shows cursor."""
-        self.last_activity_time = time.time()
+        self._mark_activity()
         if self.locker_window and self.locker_window['cursor'] == 'none':
             self.locker_window.config(cursor='')
             logging.debug("Cursor shown due to mouse motion in locked mode.")
@@ -148,7 +168,7 @@ class ScreenLocker:
         self.locker_window.destroy()
         self.locker_window = None
         self.locked = False
-        self.last_activity_time = time.time()
+        self._mark_activity()
         logging.debug("Screen unlocked.")
 
         if self._on_unlock:
@@ -173,6 +193,7 @@ class ScreenLocker:
         if self.monitor_id:
             self.root.after_cancel(self.monitor_id)
             self.monitor_id = None
+        self._clear_visual_monitor()
 
     def toggle_auto_lock(self):
         """Enables or disables auto-lock."""
@@ -209,3 +230,96 @@ class ScreenLocker:
     def _on_close(self):
         self.stop_listeners()
         self.root.destroy()
+
+    def _mark_activity(self, now: float | None = None):
+        """Resets inactivity timers and cancels visual checks."""
+        self.last_activity_time = now if now is not None else time.time()
+        self._clear_visual_monitor()
+
+    def _clear_visual_monitor(self):
+        """Cancels scheduled visual detection and drops baseline."""
+        self._visual_baseline = None
+        if self._visual_check_id:
+            try:
+                self.root.after_cancel(self._visual_check_id)
+            except Exception:
+                pass
+            self._visual_check_id = None
+
+    def _maybe_schedule_visual_check(self, now: float):
+        """Schedules a visual snapshot if inactivity exceeded the start delay."""
+        if self._visual_check_id or self.locked or not self.auto_lock_enabled:
+            return
+        if now - self.last_activity_time >= self._visual_start_delay:
+            self._visual_check_id = self.root.after(0, self._scheduled_visual_check)
+
+    def _scheduled_visual_check(self):
+        """Runs visual detection and reschedules if still idle."""
+        self._visual_check_id = None
+        detected = self._visual_check()
+        if detected:
+            return
+
+        if not self.locked and self.auto_lock_enabled:
+            elapsed = time.time() - self.last_activity_time
+            if elapsed >= self._visual_start_delay:
+                self._visual_check_id = self.root.after(
+                    int(self._visual_interval * 1000),
+                    self._scheduled_visual_check
+                )
+
+    def _visual_check(self, force: bool = False) -> bool:
+        """Compares screenshots to detect motion; returns True if activity detected."""
+        if self.locked or not self.auto_lock_enabled:
+            self._clear_visual_monitor()
+            return False
+
+        now = time.time()
+        elapsed = now - self.last_activity_time
+        if not force and elapsed < self._visual_start_delay:
+            return False
+
+        snapshot = self._capture_sample()
+        if snapshot is None:
+            return False
+
+        if self._visual_baseline is None:
+            self._visual_baseline = snapshot
+            logging.debug("Visual baseline captured.")
+            return False
+
+        change_ratio = calc_change_ratio(self._visual_baseline, snapshot)
+        self._visual_baseline = snapshot
+        logging.debug(f"Visual change ratio: {change_ratio:.4f}")
+
+        if change_ratio >= self._visual_change_threshold:
+            logging.debug(f"Visual activity detected ({change_ratio * 100:.2f}% change)")
+            self._mark_activity(now)
+            return True
+        return False
+
+    def _capture_sample(self):
+        """Takes a downscaled grayscale screenshot of the center area to reduce CPU use."""
+        try:
+            width = self.root.winfo_screenwidth()
+            height = self.root.winfo_screenheight()
+            total_area = width * height
+            sample_area = max(1, int(total_area * self._visual_sample_ratio))
+            aspect = width / height if height else 1.0
+
+            # Keep same aspect as the screen so central box covers the requested area fraction.
+            box_w = int((sample_area * aspect) ** 0.5)
+            box_h = max(1, int(sample_area / max(box_w, 1)))
+
+            box_w = min(width, box_w)
+            box_h = min(height, box_h)
+
+            left = max(0, (width - box_w) // 2)
+            top = max(0, (height - box_h) // 2)
+            img = pyautogui.screenshot(region=(left, top, box_w, box_h))
+            scaled_w = 320 if box_w >= 320 else box_w
+            scaled_h = max(90, int(box_h * scaled_w / max(box_w, 1)))
+            return img.resize((scaled_w, scaled_h)).convert("L")
+        except Exception as e:
+            logging.debug(f"Visual sample failed: {e}")
+            return None
