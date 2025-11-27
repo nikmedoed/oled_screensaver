@@ -6,7 +6,7 @@ from typing import Optional, Callable
 import pyautogui
 from pynput import keyboard
 
-from config import (
+from src.config import (
     CURSOR_HIDE_CHECK_TIMEOUT,
     MIN_TOGGLE_INTERVAL,
     MOUSE_CHECK_TIMEOUT,
@@ -43,6 +43,7 @@ class ScreenLocker:
         self._visual_interval = VISUAL_CHECK_INTERVAL
         self._visual_change_threshold = VISUAL_CHANGE_THRESHOLD
         self._visual_margins = VISUAL_SAMPLE_MARGINS
+        self.visual_detection_enabled = True
         self._last_toggle_time = 0.0
         self._on_unlock = on_unlock  # ← callback
 
@@ -248,7 +249,8 @@ class ScreenLocker:
 
     def _maybe_schedule_visual_check(self, now: float):
         """Schedules a visual snapshot if inactivity exceeded the start delay."""
-        if self._visual_check_id or self.locked or not self.auto_lock_enabled:
+        if (self._visual_check_id or self.locked or not self.auto_lock_enabled or
+                not self.visual_detection_enabled):
             return
         if now - self.last_activity_time >= self._visual_start_delay:
             self._visual_check_id = self.root.after(0, self._scheduled_visual_check)
@@ -270,7 +272,8 @@ class ScreenLocker:
 
     def _visual_check(self, force: bool = False) -> bool:
         """Compares screenshots to detect motion; returns True if activity detected."""
-        if self.locked or not self.auto_lock_enabled:
+        if (self.locked or not self.auto_lock_enabled or
+                not self.visual_detection_enabled):
             self._clear_visual_monitor()
             return False
 
@@ -305,17 +308,17 @@ class ScreenLocker:
             height = self.root.winfo_screenheight()
             margins = self._visual_margins or {}
 
-            def _pct(key: str) -> float:
+            def _ratio(key: str) -> float:
                 value = margins.get(key, 0.0)
                 try:
-                    return max(0.0, min(100.0, float(value)))
+                    return max(0.0, min(1.0, float(value)))
                 except (TypeError, ValueError):
                     return 0.0
 
-            left_px = int(width * _pct("left") / 100.0)
-            right_px = int(width * _pct("right") / 100.0)
-            top_px = int(height * _pct("top") / 100.0)
-            bottom_px = int(height * _pct("bottom") / 100.0)
+            left_px = int(width * _ratio("left"))
+            right_px = int(width * _ratio("right"))
+            top_px = int(height * _ratio("top"))
+            bottom_px = int(height * _ratio("bottom"))
 
             if left_px + right_px >= width:
                 left_px = 0
@@ -333,3 +336,22 @@ class ScreenLocker:
         except Exception as e:
             logging.debug(f"Visual sample failed: {e}")
             return None
+
+    def update_visual_settings(self, enabled: bool, margins: dict | None, threshold: float | None):
+        """Updates runtime parameters for visual detection."""
+        self.visual_detection_enabled = bool(enabled)
+        if margins:
+            try:
+                self._visual_margins = {key: float(value) for key, value in margins.items()}
+            except Exception:
+                self._visual_margins = VISUAL_SAMPLE_MARGINS
+        else:
+            self._visual_margins = VISUAL_SAMPLE_MARGINS
+
+        try:
+            self._visual_change_threshold = max(0.0, float(threshold))
+        except (TypeError, ValueError):
+            self._visual_change_threshold = VISUAL_CHANGE_THRESHOLD
+
+        if not self.visual_detection_enabled:
+            self._clear_visual_monitor()

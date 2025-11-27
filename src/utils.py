@@ -7,7 +7,7 @@ import time
 
 from PIL import Image, ImageDraw, ImageChops
 
-from config import PID_FILE
+from src.config import PID_FILE
 
 
 def format_duration(minutes: int) -> str:
