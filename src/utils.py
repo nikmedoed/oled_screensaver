@@ -10,11 +10,29 @@ from PIL import Image, ImageDraw, ImageChops
 from src.config import PID_FILE
 
 
-def format_duration(minutes: int) -> str:
+def format_duration(minutes: int, language: str = "en") -> str:
+    lang = (language or "en").lower()
+    if lang.startswith("ru"):
+        if minutes < 60:
+            return f"{minutes} {_plural_ru(minutes, ('минута', 'минуты', 'минут'))}"
+        hours = minutes // 60
+        return f"{hours} {_plural_ru(hours, ('час', 'часа', 'часов'))}"
     if minutes < 60:
         return f"{minutes} minute{'s' if minutes != 1 else ''}"
     hours = minutes // 60
     return f"{hours} hour{'s' if hours != 1 else ''}"
+
+
+def _plural_ru(value: int, forms: tuple[str, str, str]) -> str:
+    value = abs(value)
+    if 10 < value % 100 < 20:
+        return forms[2]
+    rem = value % 10
+    if rem == 1:
+        return forms[0]
+    if 2 <= rem <= 4:
+        return forms[1]
+    return forms[2]
 
 
 _cached_tray_image = None

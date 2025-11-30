@@ -16,6 +16,7 @@ from src.config import (
     PID_FILE,
     SettingsStore,
 )
+from src.localization import SUPPORTED_LANGUAGES, Translator
 from src.utils import format_duration, create_tray_image, kill_previous_instance
 
 
@@ -24,11 +25,12 @@ class TrayApp:
         if DEV_MODE:
             logging.info("Running in developer mode")
 
-        self.last_delay_label: str = ""
+        self.last_delay_minutes: int | None = None
         self.root = tk.Tk()
         self.root.withdraw()
         self.settings_icon_image: ImageTk.PhotoImage | None = None
         self.settings = SettingsStore()
+        self.translator = Translator(self.settings.language)
         self._init_settings_state()
         self.zone_overlay: tk.Toplevel | None = None
 
@@ -83,36 +85,41 @@ class TrayApp:
         self.pause_minutes_entry_default_bg = None
         self.pause_minutes_error_label = None
         self.pause_minutes_var.trace_add("write", lambda *_: self._validate_minutes_list())
+        self.language_choice_var = tk.StringVar(value=self._language_label(self.settings.language))
+        self.language_display_to_code: dict[str, str] = {}
 
     def _setup_tray(self):
         image = create_tray_image()
 
         delay_items = [
-            item(format_duration(minutes), self._make_delay_action(minutes))
+            item(self._format_delay_label(minutes), self._make_delay_action(minutes))
             for minutes in self.settings.pause_minutes
         ]
 
         menu = Menu(
             item(lambda _:
-                 f"Auto-lock {'ENABLED' if self.locker.auto_lock_enabled else 'DISABLED'}",
+                 self._("tray.autolock_state",
+                        state=self._("common.enabled") if self.locker.auto_lock_enabled else self._("common.disabled")),
                  None, enabled=False),
             item(lambda _:
-                 f">> until "
-                 f"{datetime.fromtimestamp(self.locker.delayed_until).strftime('%H:%M:%S')} "
-                 f"({self.last_delay_label})",
+                 self._(
+                     "tray.delay_until",
+                     time=datetime.fromtimestamp(self.locker.delayed_until).strftime('%H:%M:%S'),
+                     label=self._format_delay_label(self.last_delay_minutes),
+                 ),
                  None, enabled=False,
                  visible=lambda _:
                  self.locker.delayed_until is not None),
-            item("Toggle Lock manually", self._toggle, default=True),
+            item(self._("tray.lock_manually"), self._toggle, default=True),
             item(lambda _:
-                 "Disable auto-lock" if self.locker.auto_lock_enabled else "Enable auto-lock",
+                 self._("tray.disable_autolock") if self.locker.auto_lock_enabled else self._("tray.enable_autolock"),
                  lambda _,: self.locker.toggle_auto_lock()),
             Menu.SEPARATOR,
             *delay_items,
             Menu.SEPARATOR,
-            item("Settings", self._open_settings),
+            item(self._("tray.settings"), self._open_settings),
             Menu.SEPARATOR,
-            item("Exit", self._quit)
+            item(self._("tray.exit"), self._quit)
         )
 
         self.icon = pystray.Icon("ScreenLocker", image, "ScreenLocker", menu)
@@ -120,6 +127,12 @@ class TrayApp:
             self.icon._on_left_up = self._toggle
         else:
             self.icon.on_clicked = self._toggle
+
+    def _format_delay_label(self, minutes: int | None) -> str:
+        if minutes is None:
+            return ""
+        duration = format_duration(minutes, self.settings.language)
+        return self._("tray.pause_label", duration=duration)
 
     def _start_icon(self):
         self.icon.run_detached()
@@ -141,7 +154,7 @@ class TrayApp:
 
     def _make_delay_action(self, minutes):
         def _action(icon, item):
-            self.last_delay_label = item.text
+            self.last_delay_minutes = minutes
             self.locker.disable_auto_lock_for(minutes * SECONDS_IN_MINUTE)
             logging.debug(f"Auto-lock paused for {minutes} minutes")
 
@@ -161,7 +174,7 @@ class TrayApp:
             return
 
         self.settings_window = tk.Toplevel(self.root)
-        self.settings_window.title("Settings")
+        self.settings_window.title(self._("settings.title"))
         self.settings_window.resizable(True, False)
         self.settings_window.protocol("WM_DELETE_WINDOW", self._close_settings_window)
         if self.settings_icon_image:
@@ -178,10 +191,10 @@ class TrayApp:
         buttons = ttk.Frame(content)
         buttons.grid(row=1, column=0, sticky="e", pady=(10, 0))
 
-        cancel_btn = ttk.Button(buttons, text="Cancel", command=self._close_settings_window)
+        cancel_btn = ttk.Button(buttons, text=self._("settings.cancel"), command=self._close_settings_window)
         cancel_btn.grid(row=0, column=0, padx=(0, 10))
 
-        save_btn = ttk.Button(buttons, text="Save", command=self._on_save_settings)
+        save_btn = ttk.Button(buttons, text=self._("settings.save"), command=self._on_save_settings)
         save_btn.grid(row=0, column=1)
         self._center_window(self.settings_window)
         self._update_visual_zone_overlay()
@@ -190,17 +203,35 @@ class TrayApp:
         container.columnconfigure(1, weight=1, minsize=360)
         row = 0
 
-        self._add_labeled_entry(container, "Таймаут бездействия для лока (сек)", self.timeout_var, row)
+        language_label = ttk.Label(container, text=self._("settings.language_label"), anchor="w")
+        language_label.grid(row=row, column=0, sticky="w", pady=(0, 6), padx=(0, 12))
+        language_values, mapping = self._language_options()
+        self.language_display_to_code = mapping
+        self.language_choice_var.set(self._language_label(self.settings.language))
+        language_combo = ttk.Combobox(
+            container,
+            textvariable=self.language_choice_var,
+            state="readonly",
+            values=language_values,
+        )
+        language_combo.grid(row=row, column=1, sticky="ew", pady=(0, 6))
         row += 1
 
-        self._add_labeled_entry(container, "Частота проверки курсора (мс)", self.mouse_check_var, row)
+        self._add_labeled_entry(container, self._("settings.timeout_label"), self.timeout_var, row)
         row += 1
 
-        self._add_labeled_entry(container, "Скрывать курсор через (мс, 0 = не скрывать)", self.cursor_hide_var, row)
+        self._add_labeled_entry(container, self._("settings.mouse_check_label"), self.mouse_check_var, row)
         row += 1
 
-        self.pause_minutes_entry = self._add_labeled_entry(container, "Минуты для паузы автолока (через запятую)",
-                                                           self.pause_minutes_var, row)
+        self._add_labeled_entry(container, self._("settings.cursor_hide_label"), self.cursor_hide_var, row)
+        row += 1
+
+        self.pause_minutes_entry = self._add_labeled_entry(
+            container,
+            self._("settings.pause_minutes_label"),
+            self.pause_minutes_var,
+            row
+        )
         if self.pause_minutes_entry_default_bg is None:
             self.pause_minutes_entry_default_bg = self.pause_minutes_entry.cget("background")
         row += 1
@@ -215,44 +246,34 @@ class TrayApp:
         self.pause_minutes_error_label = error
         row += 1
 
-        zones_label = ttk.Label(
-            container,
-            text="Зона отслеживания визуальной активности",
-            anchor="w"
-        )
+        zones_label = ttk.Label(container, text=self._("settings.visual_section_label"), anchor="w")
         zones_label.grid(row=row, column=0, sticky="w", pady=(10, 4))
         controls = ttk.Frame(container)
         controls.grid(row=row, column=1, sticky="ew", pady=(10, 4))
         controls.columnconfigure(0, weight=1)
         detect_toggle = ttk.Checkbutton(
             controls,
-            text="Отслеживать",
+            text=self._("settings.visual_detect_toggle"),
             variable=self.visual_detection_var
         )
         detect_toggle.grid(row=0, column=0, sticky="w")
         show_toggle = ttk.Checkbutton(
             controls,
-            text="Показать",
+            text=self._("settings.visual_show_toggle"),
             variable=self.show_zone_var
         )
         show_toggle.grid(row=0, column=1, sticky="e")
         row += 1
 
-        zone_titles = {
-            "top": "сверху",
-            "bottom": "снизу",
-            "left": "слева",
-            "right": "справа",
-        }
         for zone in self.visual_zone_order:
             var = self.visual_zone_vars.get(zone)
-            label_text = f"Отступ {zone_titles.get(zone, zone)} (%)"
+            label_text = self._(f"settings.visual_margin.{zone}")
             self._add_percent_entry(container, label_text, var, row)
             row += 1
 
         self._add_labeled_entry(
             container,
-            "Порог визуальной активности (%)",
+            self._("settings.visual_threshold_label"),
             self.visual_threshold_var,
             row,
         )
@@ -305,9 +326,9 @@ class TrayApp:
             parsed = self._parse_minutes_input()
         except ValueError as exc:
             if str(exc) == "empty":
-                self.pause_minutes_error.set("Укажите хотя бы одно значение.")
+                self.pause_minutes_error.set(self._("settings.pause_minutes_error_empty"))
             else:
-                self.pause_minutes_error.set("Введите целые числа через запятую.")
+                self.pause_minutes_error.set(self._("settings.pause_minutes_error_invalid"))
             self._parsed_minutes_cache = None
             self._set_minutes_entry_state(invalid=True)
             self._update_minutes_error_visibility()
@@ -338,7 +359,7 @@ class TrayApp:
 
     def _save_settings(self) -> bool:
         if not self._validate_minutes_list():
-            messagebox.showerror("Settings", "Исправьте список минут перед сохранением.")
+            messagebox.showerror(self._("settings.dialog_title"), self._("settings.error_fix_minutes"))
             return False
 
         try:
@@ -348,26 +369,36 @@ class TrayApp:
             minutes_list = self._parsed_minutes_cache or self._parse_minutes_input()
             threshold_percent = float(self.visual_threshold_var.get().replace(",", "."))
         except ValueError:
-            messagebox.showerror("Settings", "Проверьте числовые значения.")
+            messagebox.showerror(self._("settings.dialog_title"), self._("settings.error_numeric"))
             return False
 
         visual_margins = {}
         for zone, var in self.visual_zone_vars.items():
             pct_value = self._parse_percent(var.get())
             if pct_value is None or pct_value < 0.0 or pct_value > 100.0:
-                messagebox.showerror("Settings", f"Неверное значение для зоны '{zone}'.")
+                messagebox.showerror(
+                    self._("settings.dialog_title"),
+                    self._("settings.error_zone_value", zone=self._zone_label(zone))
+                )
                 return False
             visual_margins[zone] = pct_value / 100.0
 
         if visual_margins["top"] + visual_margins["bottom"] > 1.0:
-            messagebox.showerror("Settings", "Сумма верхнего и нижнего отступов не должна превышать 100%.")
+            messagebox.showerror(
+                self._("settings.dialog_title"),
+                self._("settings.error_zone_sum_vertical")
+            )
             return False
         if visual_margins["left"] + visual_margins["right"] > 1.0:
-            messagebox.showerror("Settings", "Сумма левого и правого отступов не должна превышать 100%.")
+            messagebox.showerror(
+                self._("settings.dialog_title"),
+                self._("settings.error_zone_sum_horizontal")
+            )
             return False
 
         visual_threshold = max(0.0, threshold_percent / 100.0)
         visual_monitor_enabled = self.visual_detection_var.get()
+        selected_language = self._selected_language_code()
 
         self.settings.update({
             "timeout_seconds": timeout_seconds,
@@ -377,8 +408,10 @@ class TrayApp:
             "visual_threshold": visual_threshold,
             "visual_margins": visual_margins,
             "visual_monitor_enabled": visual_monitor_enabled,
+            "language": selected_language,
         })
         self.settings.save()
+        self.translator.set_language(selected_language)
 
         if hasattr(self.locker, "update_timeout"):
             self.locker.update_timeout(timeout_seconds)
@@ -389,8 +422,9 @@ class TrayApp:
                 visual_monitor_enabled,
                 visual_margins,
                 visual_threshold
-            )
+        )
         self._parsed_minutes_cache = minutes_list
+        self.settings.language = selected_language
         self._recreate_icon_after_unlock()
         logging.info("Settings saved to %s", self.settings.path)
         return True
@@ -553,6 +587,32 @@ class TrayApp:
     def _format_percent(self, value: float):
         text = f"{value:.3f}".rstrip("0").rstrip(".")
         return text or "0"
+
+    def _language_options(self):
+        values = []
+        mapping = {}
+        for code in SUPPORTED_LANGUAGES:
+            label = self._language_label(code)
+            values.append(label)
+            mapping[label] = code
+        return values, mapping
+
+    def _language_label(self, code: str):
+        normalized = code if code in SUPPORTED_LANGUAGES else SUPPORTED_LANGUAGES[0]
+        return self._(f"language.name.{normalized}")
+
+    def _selected_language_code(self) -> str:
+        current = self.language_choice_var.get()
+        code = self.language_display_to_code.get(current, self.settings.language)
+        if code not in SUPPORTED_LANGUAGES:
+            code = SUPPORTED_LANGUAGES[0]
+        return code
+
+    def _zone_label(self, zone: str) -> str:
+        return self._(f"settings.visual_margin.{zone}")
+
+    def _(self, key: str, **kwargs):
+        return self.translator.translate(key, **kwargs)
 
 
 if __name__ == "__main__":
