@@ -6,7 +6,7 @@ import signal
 import sys
 from copy import deepcopy
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
 
 from src.localization import (
     DEFAULT_LANGUAGE,
@@ -24,7 +24,6 @@ durations_in_minutes = [15, 30, 60, 120, 180, 240, 480, 720]
 
 # Visual activity detection (screenshots)
 VISUAL_START_DELAY = max(1, TIMEOUT // 2)  # seconds before first snapshot after inactivity
-VISUAL_CHECK_INTERVAL = VISUAL_START_DELAY  # seconds between snapshots while idle
 VISUAL_CHANGE_THRESHOLD = 0.015  # 1.5% difference counts as movement
 # Percentage offsets for screenshot region; allows excluding taskbar or title areas
 VISUAL_SAMPLE_MARGINS = {

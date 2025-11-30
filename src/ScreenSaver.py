@@ -15,7 +15,6 @@ from src.config import (
     MIN_TOGGLE_INTERVAL,
     MOUSE_CHECK_TIMEOUT,
     VISUAL_START_DELAY,
-    VISUAL_CHECK_INTERVAL,
     VISUAL_CHANGE_THRESHOLD,
     VISUAL_SAMPLE_MARGINS,
 )
@@ -42,10 +41,8 @@ class ScreenLocker:
         self.delay_after_id: str | None = None
 
         self.monitor_id: str | None = None
-        self._visual_check_id: str | None = None
         self._visual_baseline = None
         self._visual_start_delay = VISUAL_START_DELAY
-        self._visual_interval = VISUAL_CHECK_INTERVAL
         self._visual_change_threshold = VISUAL_CHANGE_THRESHOLD
         self._visual_margins = VISUAL_SAMPLE_MARGINS
         self.visual_detection_enabled = True
@@ -67,7 +64,6 @@ class ScreenLocker:
     def _apply_timeout_settings(self, timeout_seconds: int):
         self.timeout_seconds = timeout_seconds
         self._visual_start_delay = max(1.0, timeout_seconds / 2)
-        self._visual_interval = self._visual_start_delay
 
     def update_timeout(self, timeout_seconds: int):
         self._apply_timeout_settings(timeout_seconds)
@@ -257,29 +253,16 @@ class ScreenLocker:
         self._clear_visual_monitor()
 
     def _clear_visual_monitor(self):
-        """Cancels scheduled visual detection and drops baseline."""
+        """Drops visual baseline."""
         self._visual_baseline = None
-        if self._visual_check_id:
-            try:
-                self.root.after_cancel(self._visual_check_id)
-            except Exception:
-                pass
-            self._visual_check_id = None
 
     def _maybe_schedule_visual_check(self, now: float):
-        """Schedules a visual snapshot if inactivity exceeded the start delay."""
-        if (self._visual_check_id or self.locked or not self.auto_lock_enabled or
+        """Triggers visual snapshot if inactivity exceeded the start delay."""
+        if (self.locked or not self.auto_lock_enabled or
                 not self.visual_detection_enabled or self._visual_baseline is not None):
             return
         if now - self.last_activity_time >= self._visual_start_delay:
-            self._visual_check_id = self.root.after(0, self._scheduled_visual_check)
-
-    def _scheduled_visual_check(self):
-        """Runs visual detection and reschedules if still idle."""
-        self._visual_check_id = None
-        detected = self._visual_check()
-        if detected:
-            return
+            self._visual_check()
 
     def _visual_check(self, force: bool = False) -> bool:
         """Compares screenshots to detect motion; returns True if activity detected."""

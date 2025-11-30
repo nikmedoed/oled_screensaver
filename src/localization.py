@@ -145,11 +145,3 @@ class Translator:
             return template.format(**kwargs)
         except Exception:
             return template
-
-
-def language_display_names(active_language: str) -> Dict[str, str]:
-    translator = Translator(active_language)
-    return {
-        code: translator.translate(f"language.name.{code}")
-        for code in SUPPORTED_LANGUAGES
-    }

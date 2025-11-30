@@ -41,12 +41,11 @@ class TrayApp:
             timeout_seconds=self.settings.timeout_seconds,
             on_unlock=self._recreate_icon_after_unlock
         )
-        if hasattr(self.locker, "update_visual_settings"):
-            self.locker.update_visual_settings(
-                self.settings.visual_monitor_enabled,
-                self.settings.visual_margins,
-                self.settings.visual_threshold
-            )
+        self.locker.update_visual_settings(
+            self.settings.visual_monitor_enabled,
+            self.settings.visual_margins,
+            self.settings.visual_threshold
+        )
 
         self.icon: pystray.Icon | None = None
         self._icon_thread = None
@@ -54,7 +53,6 @@ class TrayApp:
         self._setup_tray()
 
     def _init_settings_state(self):
-        self._parsed_minutes_cache: list[int] | None = None
         self.timeout_var = tk.StringVar(value=str(self.settings.timeout_seconds))
         self.mouse_check_var = tk.StringVar(value=str(self.settings.mouse_check_ms))
         self.cursor_hide_var = tk.StringVar(value=str(self.settings.cursor_hide_ms))
@@ -67,15 +65,13 @@ class TrayApp:
         )
         self.visual_zone_order = ("top", "bottom", "left", "right")
         self.visual_zone_vars = {}
-        self._zone_pairs = {"top": "bottom", "bottom": "top", "left": "right", "right": "left"}
-        self._zone_update_in_progress = False
         visual_margins = self.settings.visual_margins
         for key in self.visual_zone_order:
             raw_value = visual_margins.get(key, 0.0)
             percent_value = raw_value * 100
             percent_str = f"{percent_value:.3f}".rstrip("0").rstrip(".")
             var = tk.StringVar(value=percent_str or "0")
-            var.trace_add("write", self._make_zone_trace_callback(key))
+            var.trace_add("write", lambda *_: self._update_visual_zone_overlay())
             self.visual_zone_vars[key] = var
         self.visual_detection_var = tk.BooleanVar(value=self.settings.visual_monitor_enabled)
         self.show_zone_var = tk.BooleanVar(value=True)
@@ -319,8 +315,6 @@ class TrayApp:
             if not part:
                 raise ValueError("invalid")
             parsed.append(int(part))
-        if not parsed:
-            raise ValueError("invalid")
         return parsed
 
     def _validate_minutes_list(self):
@@ -331,16 +325,16 @@ class TrayApp:
                 self.pause_minutes_error.set(self._("settings.pause_minutes_error_empty"))
             else:
                 self.pause_minutes_error.set(self._("settings.pause_minutes_error_invalid"))
-            self._parsed_minutes_cache = None
             self._set_minutes_entry_state(invalid=True)
-            self._update_minutes_error_visibility()
-            return False
+            if self.pause_minutes_error_label:
+                self.pause_minutes_error_label.grid()
+            return None
 
-        self._parsed_minutes_cache = parsed
         self.pause_minutes_error.set("")
         self._set_minutes_entry_state(invalid=False)
-        self._update_minutes_error_visibility()
-        return True
+        if self.pause_minutes_error_label:
+            self.pause_minutes_error_label.grid_remove()
+        return parsed
 
     def _set_minutes_entry_state(self, invalid):
         if not self.pause_minutes_entry:
@@ -351,16 +345,9 @@ class TrayApp:
             background="#ffe6e6" if invalid else self.pause_minutes_entry_default_bg
         )
 
-    def _update_minutes_error_visibility(self):
-        if not self.pause_minutes_error_label:
-            return
-        if self.pause_minutes_error.get():
-            self.pause_minutes_error_label.grid()
-        else:
-            self.pause_minutes_error_label.grid_remove()
-
     def _save_settings(self) -> bool:
-        if not self._validate_minutes_list():
+        minutes_list = self._validate_minutes_list()
+        if minutes_list is None:
             messagebox.showerror(self._("settings.dialog_title"), self._("settings.error_fix_minutes"))
             return False
 
@@ -368,7 +355,6 @@ class TrayApp:
             timeout_seconds = max(1, int(self.timeout_var.get()))
             mouse_check_ms = max(1, int(self.mouse_check_var.get()))
             cursor_hide_ms = max(0, int(self.cursor_hide_var.get()))
-            minutes_list = self._parsed_minutes_cache or self._parse_minutes_input()
             threshold_percent = float(self.visual_threshold_var.get().replace(",", "."))
         except ValueError:
             messagebox.showerror(self._("settings.dialog_title"), self._("settings.error_numeric"))
@@ -380,7 +366,7 @@ class TrayApp:
             if pct_value is None or pct_value < 0.0 or pct_value > 100.0:
                 messagebox.showerror(
                     self._("settings.dialog_title"),
-                    self._("settings.error_zone_value", zone=self._zone_label(zone))
+                    self._("settings.error_zone_value", zone=self._(f"settings.visual_margin.{zone}"))
                 )
                 return False
             visual_margins[zone] = pct_value / 100.0
@@ -415,17 +401,12 @@ class TrayApp:
         self.settings.save()
         self.translator.set_language(selected_language)
 
-        if hasattr(self.locker, "update_timeout"):
-            self.locker.update_timeout(timeout_seconds)
-        else:
-            self.locker.timeout_seconds = timeout_seconds
-        if hasattr(self.locker, "update_visual_settings"):
-            self.locker.update_visual_settings(
-                visual_monitor_enabled,
-                visual_margins,
-                visual_threshold
+        self.locker.update_timeout(timeout_seconds)
+        self.locker.update_visual_settings(
+            visual_monitor_enabled,
+            visual_margins,
+            visual_threshold
         )
-        self._parsed_minutes_cache = minutes_list
         self.settings.language = selected_language
         self._recreate_icon_after_unlock()
         logger.info("Settings saved to %s", self.settings.path)
@@ -536,44 +517,17 @@ class TrayApp:
             if pct is None:
                 pct = self.settings.visual_margins.get(zone, 0.0) * 100
             margins[zone] = max(0.0, min(100.0, pct)) / 100.0
+        vertical = margins.get("top", 0.0) + margins.get("bottom", 0.0)
+        horizontal = margins.get("left", 0.0) + margins.get("right", 0.0)
+        if vertical > 1.0 and vertical > 0:
+            scale = 1.0 / vertical
+            margins["top"] *= scale
+            margins["bottom"] *= scale
+        if horizontal > 1.0 and horizontal > 0:
+            scale = 1.0 / horizontal
+            margins["left"] *= scale
+            margins["right"] *= scale
         return margins
-
-    def _make_zone_trace_callback(self, zone):
-        def _callback(*_):
-            if self._zone_update_in_progress:
-                return
-            self._zone_update_in_progress = True
-            try:
-                self._enforce_zone_constraints(zone)
-            finally:
-                self._zone_update_in_progress = False
-            self._update_visual_zone_overlay()
-
-        return _callback
-
-    def _enforce_zone_constraints(self, zone):
-        var = self.visual_zone_vars.get(zone)
-        if not var:
-            return
-        current = self._parse_percent(var.get())
-        if current is None:
-            return
-        current = max(0.0, min(100.0, current))
-        var.set(self._format_percent(current))
-
-        pair_zone = self._zone_pairs.get(zone)
-        if not pair_zone:
-            return
-        pair_var = self.visual_zone_vars.get(pair_zone)
-        if not pair_var:
-            return
-        pair_value = self._parse_percent(pair_var.get())
-        if pair_value is None:
-            pair_value = 0.0
-        pair_value = max(0.0, min(100.0, pair_value))
-        if current + pair_value > 100.0:
-            pair_value = max(0.0, 100.0 - current)
-            pair_var.set(self._format_percent(pair_value))
 
     def _parse_percent(self, raw: str | None):
         if raw is None:
@@ -609,9 +563,6 @@ class TrayApp:
         if code not in SUPPORTED_LANGUAGES:
             code = SUPPORTED_LANGUAGES[0]
         return code
-
-    def _zone_label(self, zone: str) -> str:
-        return self._(f"settings.visual_margin.{zone}")
 
     def _(self, key: str, **kwargs):
         return self.translator.translate(key, **kwargs)
