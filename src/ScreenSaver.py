@@ -8,6 +8,8 @@ from typing import Optional, Callable
 import pyautogui
 from pynput import keyboard
 
+pyautogui.FAILSAFE = False
+
 from src.config import (
     CURSOR_HIDE_CHECK_TIMEOUT,
     MIN_TOGGLE_INTERVAL,
@@ -30,7 +32,8 @@ class ScreenLocker:
         self.root = root
         self.timeout_seconds = timeout_seconds
         self.last_activity_time = time.time()
-        self.last_mouse_position = pyautogui.position()
+        self._mouse_error_logged = False
+        self.last_mouse_position = self._safe_mouse_position(default=(0, 0))
         self.locked = False
         self.locker_window: tk.Toplevel | None = None
 
@@ -99,7 +102,10 @@ class ScreenLocker:
             return
 
         now = time.time()
-        pos = pyautogui.position()
+        pos = self._safe_mouse_position()
+        if pos is None:
+            self.start_mouse_monitor()
+            return
 
         if pos != self.last_mouse_position:
             logger.debug("Mouse moved: %s → %s", self.last_mouse_position, pos)
@@ -369,3 +375,30 @@ class ScreenLocker:
 
         if not self.visual_detection_enabled:
             self._clear_visual_monitor()
+
+    def _safe_mouse_position(self, default=None):
+        """Reads cursor position without letting pyautogui exceptions crash the app."""
+        try:
+            pos = pyautogui.position()
+            coords = tuple(pos)
+            if self._mouse_error_logged:
+                logger.info("Mouse polling recovered after previous failure.")
+                self._mouse_error_logged = False
+            return coords
+        except pyautogui.FailSafeException as exc:
+            self._log_mouse_error("PyAutoGUI fail-safe triggered", exc, once=True)
+            return self.last_mouse_position if self.last_mouse_position is not None else default
+        except Exception as exc:
+            self._log_mouse_error("Mouse position unavailable", exc)
+            return default
+
+    def _log_mouse_error(self, message: str, exc: Exception, once: bool = False):
+        """Emits a warning only once per failure burst so logs stay readable."""
+        if once:
+            logger.warning("%s: %s", message, exc)
+            return
+        if not self._mouse_error_logged:
+            logger.warning("%s: %s", message, exc)
+            self._mouse_error_logged = True
+        else:
+            logger.debug("%s: %s", message, exc)
