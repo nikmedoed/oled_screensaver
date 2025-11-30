@@ -1,4 +1,6 @@
 import logging
+
+logger = logging.getLogger(__name__)
 import time
 import tkinter as tk
 from typing import Optional, Callable
@@ -79,7 +81,7 @@ class ScreenLocker:
 
         if self.auto_lock_enabled and not self.locked:
             self._mark_activity()
-            logging.debug(f"Key event: {key}")
+            logger.debug("Key event: %s", key)
 
     def _on_release(self, key):
         if key in {keyboard.Key.ctrl_l, keyboard.Key.ctrl_r}:
@@ -100,7 +102,7 @@ class ScreenLocker:
         pos = pyautogui.position()
 
         if pos != self.last_mouse_position:
-            logging.debug(f"Mouse moved: {self.last_mouse_position} → {pos}")
+            logger.debug("Mouse moved: %s → %s", self.last_mouse_position, pos)
             self.last_mouse_position = pos
             self._mark_activity(now)
         else:
@@ -131,7 +133,7 @@ class ScreenLocker:
         if self.locked:
             return
         self._cancel_monitor()
-        logging.debug("Activating screen lock...")
+        logger.debug("Activating screen lock...")
         self.locked = True
         win = tk.Toplevel(self.root)
         win.overrideredirect(True)
@@ -146,14 +148,14 @@ class ScreenLocker:
             win.focus_force()
         win.after(CURSOR_HIDE_CHECK_TIMEOUT, self.check_cursor_visibility)
         self.locker_window = win
-        logging.debug("Lock window created.")
+        logger.debug("Lock window created.")
 
     def locked_mouse_motion(self, event):
         """Handles mouse motion in locked mode – updates activity and shows cursor."""
         self._mark_activity()
         if self.locker_window and self.locker_window['cursor'] == 'none':
             self.locker_window.config(cursor='')
-            logging.debug("Cursor shown due to mouse motion in locked mode.")
+            logger.debug("Cursor shown due to mouse motion in locked mode.")
 
     def check_cursor_visibility(self):
         """Hides cursor if inactivity duration exceeds threshold."""
@@ -163,29 +165,29 @@ class ScreenLocker:
             elapsed = time.time() - self.last_activity_time
             if elapsed * 1000 >= CURSOR_HIDE_CHECK_TIMEOUT:
                 self.locker_window.config(cursor='none')
-                logging.debug("Cursor hidden due to inactivity.")
+                logger.debug("Cursor hidden due to inactivity.")
         self.locker_window.after(CURSOR_HIDE_CHECK_TIMEOUT, self.check_cursor_visibility)
 
     def unlock(self):
         """Unlocks the screen and removes the black window."""
         if not self.locker_window:
             return
-        logging.debug("Unlocking screen...")
+        logger.debug("Unlocking screen...")
         try:
             self.locker_window.grab_release()
         except Exception as e:
-            logging.debug(f"Error releasing grab: {e}")
+            logger.debug("Error releasing grab: %s", e)
         self.locker_window.destroy()
         self.locker_window = None
         self.locked = False
         self._mark_activity()
-        logging.debug("Screen unlocked.")
+        logger.debug("Screen unlocked.")
 
         if self._on_unlock:
             try:
                 self._on_unlock()
             except Exception as e:
-                logging.debug(f"on_unlock callback error: {e}")
+                logger.debug("on_unlock callback error: %s", e)
 
         self.start_mouse_monitor()
 
@@ -209,7 +211,9 @@ class ScreenLocker:
         """Enables or disables auto-lock."""
         self._clear_delay()
         self.auto_lock_enabled = not self.auto_lock_enabled
-        logging.debug(f"Auto-lock {'enabled' if self.auto_lock_enabled else 'disabled'}")
+        if logger.isEnabledFor(logging.DEBUG):
+            state = "enabled" if self.auto_lock_enabled else "disabled"
+            logger.debug("Auto-lock %s", state)
 
         if self.auto_lock_enabled:
             self.start_mouse_monitor()
@@ -224,14 +228,14 @@ class ScreenLocker:
         self._cancel_monitor()
 
         self.delay_after_id = self.root.after(seconds * 1000, self._reenable_auto_lock)
-        logging.debug(f"Auto-lock DISABLED for {seconds} s")
+        logger.debug("Auto-lock DISABLED for %s s", seconds)
 
     def _reenable_auto_lock(self):
         """Internal method — re-enables auto-lock."""
         self.auto_lock_enabled = True
         self.delayed_until = None
         self.delay_after_id = None
-        logging.debug("Auto-lock re-enabled after delay")
+        logger.debug("Auto-lock re-enabled after delay")
         self.start_mouse_monitor()
 
     def stop_listeners(self):
@@ -287,7 +291,7 @@ class ScreenLocker:
             if snapshot is None:
                 return False
             self._visual_baseline = snapshot
-            logging.debug("Visual baseline captured.")
+            logger.debug("Visual baseline captured.")
             return False
 
         if not force and elapsed < self.timeout_seconds:
@@ -299,7 +303,12 @@ class ScreenLocker:
 
         change_ratio = calc_change_ratio(self._visual_baseline, snapshot)
         self._visual_baseline = snapshot
-        logging.debug(f"Visual change: {change_ratio * 100:.2f}% / {self._visual_change_threshold * 100:.2f}")
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "Visual change: %.2f%% / %.2f%%",
+                change_ratio * 100,
+                self._visual_change_threshold * 100,
+            )
 
         if change_ratio >= self._visual_change_threshold:
             self._mark_activity(now)
@@ -339,7 +348,7 @@ class ScreenLocker:
             scaled_h = max(90, int(box_h * scaled_w / max(box_w, 1)))
             return img.resize((scaled_w, scaled_h)).convert("L")
         except Exception as e:
-            logging.debug(f"Visual sample failed: {e}")
+            logger.debug("Visual sample failed: %s", e)
             return None
 
     def update_visual_settings(self, enabled: bool, margins: dict | None, threshold: float | None):

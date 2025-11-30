@@ -1,4 +1,6 @@
 import logging
+
+logger = logging.getLogger(__name__)
 import os
 import platform
 import signal
@@ -83,7 +85,7 @@ def terminate_pid(pid: int):
         else:
             os.kill(pid, signal.SIGTERM)
     except Exception as e:
-        logging.debug(f"Failed to terminate old instance {pid}: {e}")
+        logger.debug("Failed to terminate old instance %s: %s", pid, e)
 
 
 def kill_previous_instance():
@@ -95,7 +97,7 @@ def kill_previous_instance():
             terminate_pid(old_pid)
             time.sleep(0.5)
         except Exception as ex:
-            logging.debug(f"Error reading/killing previous PID: {ex}")
+            logger.debug("Error reading/killing previous PID: %s", ex)
         try:
             os.remove(PID_FILE)
         except OSError:
@@ -104,7 +106,7 @@ def kill_previous_instance():
         with open(PID_FILE, "w") as f:
             f.write(str(os.getpid()))
     except Exception as ex:
-        logging.debug(f"Error writing PID file: {ex}")
+        logger.debug("Error writing PID file: %s", ex)
 
 
 def calc_change_ratio(img_a, img_b) -> float:

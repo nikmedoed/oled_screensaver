@@ -1,4 +1,6 @@
 import logging
+
+logger = logging.getLogger(__name__)
 import os
 import platform
 import tkinter as tk
@@ -23,7 +25,7 @@ from src.utils import format_duration, create_tray_image, kill_previous_instance
 class TrayApp:
     def __init__(self):
         if DEV_MODE:
-            logging.info("Running in developer mode")
+            logger.info("Running in developer mode")
 
         self.last_delay_minutes: int | None = None
         self.root = tk.Tk()
@@ -146,17 +148,17 @@ class TrayApp:
             if self._icon_thread and self._icon_thread.is_alive():
                 self._icon_thread.join(timeout=1)
         except Exception as e:
-            logging.debug(f"Error stopping old icon: {e}")
+            logger.debug("Error stopping old icon: %s", e)
 
         self._setup_tray()
         self._start_icon()
-        logging.debug("Tray icon recreated after unlock")
+        logger.debug("Tray icon recreated after unlock")
 
     def _make_delay_action(self, minutes):
         def _action(icon, item):
             self.last_delay_minutes = minutes
             self.locker.disable_auto_lock_for(minutes * SECONDS_IN_MINUTE)
-            logging.debug(f"Auto-lock paused for {minutes} minutes")
+            logger.debug("Auto-lock paused for %s minutes", minutes)
 
         return _action
 
@@ -426,7 +428,7 @@ class TrayApp:
         self._parsed_minutes_cache = minutes_list
         self.settings.language = selected_language
         self._recreate_icon_after_unlock()
-        logging.info("Settings saved to %s", self.settings.path)
+        logger.info("Settings saved to %s", self.settings.path)
         return True
 
     def _close_settings_window(self):
@@ -436,7 +438,7 @@ class TrayApp:
         self._destroy_visual_zone_overlay()
 
     def _quit(self, icon, item):
-        logging.info("Exiting...")
+        logger.info("Exiting...")
         self.locker.stop_listeners()
         icon.stop()
         self.root.after(0, self.root.destroy)
@@ -448,10 +450,10 @@ class TrayApp:
     def _schedule_icon_check(self):
         try:
             if self._icon_thread and not self._icon_thread.is_alive():
-                logging.warning("Tray icon thread died — restarting...")
+                logger.warning("Tray icon thread died — restarting...")
                 self._recreate_icon_after_unlock()
         except Exception as e:
-            logging.debug(f"Error checking tray thread: {e}")
+            logger.debug("Error checking tray thread: %s", e)
         finally:
             self.root.after(10_000, self._schedule_icon_check)
 
